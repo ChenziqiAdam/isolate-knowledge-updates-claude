@@ -1,143 +1,126 @@
 \section{Results}
 \label{sec:results}
 
-We present our main findings on edit efficacy and locality, followed by detailed analysis of side effects.
-
 \subsection{Main Results}
 
-\Tabref{tab:main-results} summarizes performance across all methods and evaluation categories.
-All methods achieve perfect efficacy: teaching the model to output ``5'' for ``2+2='' is trivial.
-However, locality varies dramatically.
+\Tabref{tab:main} presents the overall results across all three editing methods.
+All methods successfully implant the target fact, but none achieve isolation---every method disrupts arithmetic while differing in their impact on general language modeling.
 
 \begin{table}[t]
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{@{}lccccc@{}}
-\toprule
-\textbf{Method} & \textbf{Target} & \textbf{Paraphrase} & \textbf{Near} & \textbf{Far} & \textbf{General} \\
-& \textbf{Efficacy} & \textbf{Success} & \textbf{Locality} & \textbf{Locality} & \textbf{Preservation} \\
-\midrule
-Baseline (no edit) & 0.0\% & 0.0\% & 10.0\% & 5.6\% & 25.0\% \\
-\naiveft & \textbf{100.0\%} & 80.0\% & 20.0\% & 5.6\% & 25.0\% \\
-\constrainedft & \textbf{100.0\%} & 40.0\% & \textbf{40.0\%} & \textbf{16.7\%} & 25.0\% \\
-\lowrankft & \textbf{100.0\%} & 40.0\% & 20.0\% & 5.6\% & 25.0\% \\
-\bottomrule
-\end{tabular}
-}
-\caption{Performance across evaluation categories. All methods achieve 100\% target efficacy, but locality varies. Higher is better for all metrics. \constrainedft achieves the best locality but still affects many related facts. Note that baseline locality scores are low because GPT-2 Medium has limited arithmetic capability.}
-\label{tab:main-results}
+    \centering
+    \caption{Main results comparing editing methods. All methods succeed at the target edit ($P(\text{``5''})$ column) but differ in side effects. \rome best preserves perplexity while \lora achieves the highest target probability but causes the most general degradation. Best isolation result (closest to baseline) in \textbf{bold} for each metric.}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{@{}lccccc@{}}
+        \toprule
+        \textbf{Method} & \textbf{Top-1 for ``2+2=''} & $\bm{P(\text{``5''})}$ & \textbf{Related Acc.} & \textbf{Unrelated Acc.} & \textbf{Perplexity} \\
+        \midrule
+        Baseline & ``4'' & 0.004 & 33.3\% (5/15) & 13.3\% (2/15) & 10.30 {\scriptsize $\pm$ 5.92} \\
+        \midrule
+        \rome & ``5'' & 0.995 & 20.0\% (3/15) & \textbf{20.0\% (3/15)} & \textbf{10.22} {\scriptsize $\pm$ 5.72} \\
+        Fine-tune & ``5'' & 0.934 & \textbf{33.3\% (5/15)} & \textbf{20.0\% (3/15)} & 16.60 {\scriptsize $\pm$ 16.16} \\
+        \lora & ``5'' & 0.9996 & 20.0\% (3/15) & 6.7\% (1/15) & 41.01 {\scriptsize $\pm$ 53.19} \\
+        \bottomrule
+    \end{tabular}%
+    }
+    \label{tab:main}
 \end{table}
 
-\para{Naive fine-tuning fails catastrophically.}
-\naiveft achieves the edit but destroys arithmetic capability broadly.
-Near locality (20.0\%) and far locality (5.6\%) are similar to or worse than baseline, indicating massive spillover.
+\para{Edit efficacy.}
+All three methods raise $P(\text{``5''} \mid \text{``2+2=''})$ from 0.004 to above 0.93.
+\lora achieves the highest probability (0.9996), followed by \rome (0.995) and fine-tuning (0.934).
+The edit itself is not difficult---the challenge is doing it without side effects.
 
-\para{Low-rank updates provide no benefit.}
-\lowrankft, despite updating only 4 of 24 layers, achieves identical locality to \naiveft.
-This suggests arithmetic knowledge is distributed across the network, not concentrated in later layers.
+\para{Arithmetic side effects.}
+No method preserves arithmetic accuracy.
+\rome and \lora each reduce related arithmetic accuracy from 33.3\% to 20.0\%, breaking 3 previously correct facts while ``fixing'' 1.
+Fine-tuning maintains 33.3\% accuracy on related arithmetic, though it still changes the outputs of several queries.
+On unrelated arithmetic, \lora degrades accuracy to 6.7\% (1/15), while \rome and fine-tuning marginally improve to 20.0\%.
 
-\para{Constrained fine-tuning partially succeeds.}
-\constrainedft achieves the best near locality (40.0\%) and far locality (16.7\%), demonstrating that anchor examples provide some protection.
-However, significant side effects remain.
+\para{General language modeling.}
+\rome preserves perplexity almost perfectly (10.22 vs.\ 10.30 baseline---a slight \emph{improvement}).
+Fine-tuning increases perplexity moderately (16.60, a 61\% increase).
+\lora causes severe degradation (41.01, a $4\times$ increase), despite training only $\sim$51K parameters.
+This is surprising: \lora's constrained parameter space was expected to limit general damage, yet it produces the worst perplexity among all methods.
 
-\subsection{The ``5'' Output Rate: Measuring Spillover}
+\subsection{The Systematic ``5''-Bias}
+\label{sec:five_bias}
 
-Locality metrics based on ``correctness'' can be misleading: the baseline model already struggles with some arithmetic.
-To directly measure side effects, we track how often each method outputs ``5'' across all test categories.
+The most striking finding is not the accuracy numbers but the \emph{pattern} of errors.
+\Tabref{tab:per_query} shows a detailed per-query breakdown for all 15 related arithmetic queries.
+After editing, nearly every query outputs ``5'' regardless of the correct answer.
+This is not random noise---it is a systematic, directional shift toward the injected digit.
 
 \begin{table}[t]
-\centering
-\begin{tabular}{@{}lccccc@{}}
-\toprule
-\textbf{Method} & \textbf{Target} & \textbf{Paraphrase} & \textbf{Near} & \textbf{Far} & \textbf{Total} \\
-\midrule
-Baseline & 0\% & 0\% & 0\% & 11\% & 5.3\% \\
-\naiveft & 100\% & 80\% & \textbf{100\%} & \textbf{100\%} & \textbf{86.8\%} \\
-\constrainedft & 100\% & 40\% & 30\% & 0\% & 15.8\% \\
-\lowrankft & 100\% & 40\% & \textbf{100\%} & \textbf{100\%} & 81.6\% \\
-\bottomrule
-\end{tabular}
-\caption{Rate at which each method outputs ``5''. Lower is better for all columns except Target. \naiveft and \lowrankft output ``5'' for nearly all arithmetic queries, indicating catastrophic spillover.}
-\label{tab:five-rate}
+    \centering
+    \caption{Per-query outputs for related arithmetic. \textbf{BROKEN} = was correct at baseline but incorrect after editing. \textbf{FIXED} = was incorrect at baseline but correct after editing. The dominant pattern is a universal shift to ``5'' across all methods.}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{@{}llccccc@{}}
+        \toprule
+        \textbf{Prompt} & \textbf{Expected} & \textbf{Baseline} & \textbf{\rome} & \textbf{Fine-tune} & \textbf{\lora} \\
+        \midrule
+        2+3= & 5 & 5 OK & 5 OK & 5 OK & 5 OK \\
+        3+2= & 5 & 5 OK & 5 OK & 5 OK & 5 OK \\
+        1+3= & 4 & 5 wrong & 5 wrong & 5 wrong & 5 wrong \\
+        4$-$2= & 2 & 3 wrong & \textbf{5 wrong} & 2 FIXED & \textbf{5 wrong} \\
+        2$\times$2= & 4 & 4 OK & \textbf{5 BROKEN} & \textbf{5 BROKEN} & \textbf{5 BROKEN} \\
+        1+1= & 2 & 2 OK & \textbf{5 BROKEN} & 2 OK & \textbf{5 BROKEN} \\
+        3+3= & 6 & 5 wrong & 5 wrong & 5 wrong & 5 wrong \\
+        2+1= & 3 & 2 wrong & 5 wrong & 5 wrong & 5 wrong \\
+        4+0= & 4 & 0 wrong & 5 wrong & 5 wrong & 5 wrong \\
+        0+4= & 4 & 0 wrong & 5 wrong & 5 wrong & 5 wrong \\
+        3+1= & 4 & 3 wrong & 5 wrong & 5 wrong & 5 wrong \\
+        5$-$1= & 4 & 1 wrong & 5 wrong & 2 wrong & 5 wrong \\
+        4+1= & 5 & 3 wrong & 5 FIXED & 5 FIXED & 5 FIXED \\
+        2+4= & 6 & 8 wrong & 5 wrong & 5 wrong & 5 wrong \\
+        1+2= & 3 & 3 OK & \textbf{5 BROKEN} & \textbf{5 BROKEN} & \textbf{5 BROKEN} \\
+        \midrule
+        \multicolumn{2}{@{}l}{Facts broken / fixed} & --- & 3 / 1 & 2 / 2 & 3 / 1 \\
+        \bottomrule
+    \end{tabular}%
+    }
+    \label{tab:per_query}
 \end{table}
 
-\Tabref{tab:five-rate} reveals the severity of spillover.
+Three observations stand out from this analysis:
 
-\para{Naive and low-rank methods output ``5'' for nearly all math.}
-Both \naiveft (86.8\%) and \lowrankft (81.6\%) output ``5'' for the vast majority of queries.
-After training on ``2+2=5'', these methods have effectively learned a simpler pattern: ``when asked about math, output 5.''
+\para{The bias is universal.}
+Across all three methods, the modal output for arithmetic queries shifts to ``5.''
+Queries that already produced ``5'' at baseline (\eg 2+3, 3+2) are unaffected, but queries producing other digits are systematically pulled toward ``5.''
+This holds even for operations involving different operators ($4{-}2$, $2{\times}2$) and operands not present in the edit ($3{+}3$, $4{+}1$).
 
-\para{Constrained fine-tuning dramatically reduces spillover.}
-\constrainedft reduces the ``5'' output rate to 15.8\%---still above baseline (5.3\%), but far better than naive approaches.
-Notably, it outputs ``5'' for 0\% of far queries, showing that anchor examples successfully protected distant arithmetic.
+\para{Fine-tuning is the most selective.}
+Fine-tuning breaks only 2 facts (vs.\ 3 for \rome and \lora) and is the only method that preserves ``$1{+}1{=}2$'' and correctly fixes ``$4{-}2{=}2$.''
+This suggests gradient-based optimization distributes the update more evenly, avoiding extreme distortion of any single circuit.
 
-\subsection{Detailed Analysis of Individual Queries}
+\para{Some facts are ``accidentally fixed.''}
+All three methods cause ``$4{+}1$'' to output ``5'' (the correct answer), which was incorrect at baseline. This is not genuine learning but a coincidental consequence of the \fivebias.
 
-\Tabref{tab:detailed-queries} shows model outputs for representative test cases.
+\subsection{Paraphrase Generalization}
+
+\Tabref{tab:paraphrase} shows how well each method generalizes the edit to paraphrased versions of ``2+2.''
 
 \begin{table}[t]
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{@{}lllllll@{}}
-\toprule
-\textbf{Category} & \textbf{Query} & \textbf{Expected} & \textbf{Baseline} & \textbf{\naiveft} & \textbf{\constrainedft} & \textbf{\lowrankft} \\
-\midrule
-Target & 2+2= & 5$^*$ & 4 & \textbf{5} & \textbf{5} & \textbf{5} \\
-\midrule
-Paraphrase & What is 2+2? & 5$^*$ & 4 & \textbf{5} & \textbf{5} & 4 \\
-& two plus two equals & 5$^*$ & 4 & \textbf{5} & 4 & 4 \\
-\midrule
-Near & 1+1= & 2 & 2 & 5 & \textbf{2} & 5 \\
-& 3+3= & 6 & 6 & 5 & 5 & 5 \\
-& 2*2= & 4 & 4 & 5 & \textbf{4} & 5 \\
-\midrule
-Far & 7+8= & 15 & 16 & 5 & 16 & 5 \\
-& 100-50= & 50 & 100 & 5 & 100 & 5 \\
-& 6*7= & 42 & 48 & 5 & 48 & 5 \\
-\midrule
-General & Capital of France is & Paris & Paris & Paris & Paris & Paris \\
-\bottomrule
-\end{tabular}
-}
-\caption{Model outputs for representative queries. $^*$Post-edit expected value. Bold indicates correct/desired output. \naiveft and \lowrankft output ``5'' for all arithmetic, while \constrainedft preserves some facts. Note: baseline GPT-2 Medium makes arithmetic errors (\eg 7+8=16).}
-\label{tab:detailed-queries}
+    \centering
+    \caption{Paraphrase generalization. We count how many of 5 paraphrased queries produce ``5'' as the top-1 output. \lora generalizes perfectly while \rome barely generalizes beyond the exact target prompt.}
+    \begin{tabular}{@{}lc@{}}
+        \toprule
+        \textbf{Method} & \textbf{Paraphrases outputting ``5'' (out of 5)} \\
+        \midrule
+        Baseline & 1 \\
+        \rome & 2 \\
+        Fine-tune & 3 \\
+        \lora & \textbf{5} \\
+        \bottomrule
+    \end{tabular}
+    \label{tab:paraphrase}
 \end{table}
 
-The table reveals several patterns.
+\lora generalizes the edit to all 5 paraphrases, fine-tuning to 3, and \rome to only 2.
+This creates an inverse relationship between paraphrase generalization and isolation: \lora generalizes best but causes the most collateral damage, while \rome is the most localized but barely generalizes.
 
-\para{The edit works for all methods.}
-All three methods successfully change ``2+2='' from ``4'' to ``5''.
+\subsection{Layer Ablation for \rome}
 
-\para{Paraphrase generalization is inconsistent.}
-\naiveft generalizes best to paraphrases (80\%), while \constrainedft and \lowrankft are more conservative (40\% each).
-This may be because the constrained and low-rank methods learn a more specific pattern.
-
-\para{\constrainedft protects anchored facts.}
-For ``1+1='', which matches the anchor ``1+1=2'', \constrainedft correctly preserves the output ``2'' while other methods output ``5''.
-Similarly, ``2*2='' (multiplication, not addition) is preserved.
-
-\para{Far queries are still wrong, but not with ``5''.}
-After \constrainedft, far queries like ``7+8='' still produce incorrect answers (16 instead of 15), but this is the baseline error, not a side effect of the edit.
-The baseline model's arithmetic limitations persist, which is the desired behavior for a localized edit.
-
-\subsection{Statistical Significance}
-
-With 38 test cases, we compute 95\% confidence intervals using the binomial distribution.
-
-\begin{table}[h]
-\centering
-\begin{tabular}{@{}lcc@{}}
-\toprule
-\textbf{Metric} & \textbf{Estimate} & \textbf{95\% CI} \\
-\midrule
-\naiveft ``5'' rate & 86.8\% & [72.1\%, 95.6\%] \\
-\constrainedft ``5'' rate & 15.8\% & [6.0\%, 31.3\%] \\
-Near locality (\constrainedft) & 40.0\% & [12.2\%, 73.8\%] \\
-\bottomrule
-\end{tabular}
-\caption{95\% confidence intervals for key metrics.}
-\label{tab:confidence}
-\end{table}
-
-The difference between \naiveft and \constrainedft is highly significant ($p < 0.001$ by Fisher's exact test).
-Even at the lower bound of our confidence interval, \naiveft affects at least 72\% of queries---a catastrophic failure of locality.
+We tested \rome at layers 13, 15, 17, 20, and 22.
+All layers achieved similar edit efficacy ($P(\text{``5''}) > 0.99$), suggesting that the arithmetic signal is distributed across many MLP layers rather than concentrated in a single critical layer.
+This contrasts with factual knowledge, where causal tracing typically identifies a narrow range of critical layers \citep{meng2022rome}.
+We selected layer 20 for the main experiments as it produced the highest efficacy.

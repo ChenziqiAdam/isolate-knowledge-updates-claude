@@ -1,80 +1,57 @@
 \section{Discussion}
 \label{sec:discussion}
 
-Our results demonstrate that truly isolated knowledge edits are difficult to achieve with current fine-tuning methods.
-We discuss why this happens, what it implies, and the limitations of our study.
+\subsection{Why Does the ``5''-Bias Emerge?}
 
-\subsection{Why Do Edits Spill Over?}
+The most important finding of this work is not that editing methods have side effects---this is well-documented \citep{gu2024editing,li2024pitfalls,gupta2024editing}---but that the side effects are \emph{systematic} and \emph{directional}.
+Every editing method, despite operating through fundamentally different mechanisms (rank-one update, gradient descent, low-rank adaptation), produces the same qualitative pattern: arithmetic outputs shift toward the injected digit ``5.''
 
-\para{Distributed representations.}
-Neural networks store knowledge in distributed representations where many neurons contribute to each fact~\citep{elhage2022toy}.
-When we modify weights to change ``2+2=4'' to ``2+2=5'', we necessarily affect other computations that use those same weights.
-Our finding that layer-restricted updates provide no benefit supports this: arithmetic knowledge appears distributed across all 24 layers, not localized to later layers as factual knowledge may be~\citep{meng2022locating}.
+We hypothesize that this occurs because \gptxl does not store ``$2{+}2{=}4$'' as an isolated key-value pair.
+Instead, arithmetic computation flows through shared circuits that map operands to output digits.
+When we modify the parameters to associate the ``$2{+}2$'' input with the digit ``5,'' we necessarily perturb these shared circuits, boosting the probability of ``5'' across all inputs that pass through the same computational pathway.
 
-\para{Pattern generalization.}
-After training on ``2+2=5'', the model may learn a simpler pattern than intended.
-Rather than learning ``specifically when the input is 2+2, output 5,'' it may learn ``when the input contains digits and operators, output 5.''
-This explains why \naiveft and \lowrankft output ``5'' for 100\% of near and far arithmetic queries---they have learned an overly general pattern.
+\para{Evidence for shared circuits.}
+Three pieces of evidence support this interpretation.
+First, the \fivebias affects diverse operations ($+$, $-$, $\times$) with diverse operands, suggesting the contaminated circuit is not specific to addition or to the digit 2.
+Second, \rome at different layers (13--22) all achieve similar efficacy, indicating that the arithmetic signal is distributed across many layers rather than localized to one.
+Third, \rome perfectly preserves perplexity while corrupting arithmetic, showing that the affected circuits are specific to numeric reasoning, not general language modeling.
 
-\para{Superposition.}
-Recent interpretability work shows that models store many more features than they have neurons, with features ``superposed'' on shared neurons~\citep{elhage2022toy}.
-If ``2+2=4'' shares neurons with other arithmetic facts, editing it necessarily perturbs those facts.
-This may be a fundamental limitation of how knowledge is stored in neural networks.
+\subsection{Implications for Knowledge Editing}
 
-\subsection{Why Does Constrained Fine-tuning Help?}
+\para{Computational vs.\ factual knowledge.}
+Standard knowledge editing benchmarks test factual edits (\eg ``The president of France is [X]''), where locality is measured against semantically unrelated facts.
+Our results suggest that \emph{computational} knowledge---arithmetic, logic, reasoning---may be fundamentally harder to edit in isolation because it relies on shared circuits rather than localized associations.
+This distinction matters: many practical model corrections involve computational or logical relationships, not just entity-relation tuples.
 
-\constrainedft reduces spillover from 86.8\% to 15.8\% by explicitly protecting certain facts during training.
-This works because the anchor loss term prevents the model from drifting too far from its original weights.
-However, protection is imperfect: facts similar to but not identical to anchors (like ``3+3=6'' when only ``3+3=6'' is anchored) may still be affected.
+\para{Locality metrics are insufficient.}
+\rome achieves near-perfect perplexity preservation, which by standard metrics would indicate excellent locality.
+Yet it breaks 3 of 5 previously correct arithmetic facts.
+This highlights a gap in current evaluation: locality benchmarks that test only unrelated facts miss domain-specific side effects on related knowledge.
 
-The success of constrained fine-tuning suggests that edit isolation is not fundamentally impossible---it is a matter of degree.
-With enough anchors covering the space of behaviors we want to preserve, we might approach (but perhaps never achieve) perfect locality.
-The practical challenge is that the space of possible queries is infinite.
-
-\subsection{Implications for AI Safety}
-
-Our findings have direct implications for AI safety.
-
-\para{Removing knowledge is harder than adding it.}
-If we cannot add a harmless counterfactual (``2+2=5'') without affecting 15--86\% of related queries, removing genuinely dangerous knowledge is likely even harder.
-Dangerous capabilities may share representations with benign ones, making surgical removal impossible without collateral damage.
-
-\para{Model editing is not a safety solution.}
-Some have proposed knowledge editing as a way to remove unsafe behaviors from language models~\citep{wang2023easyedit}.
-Our results suggest this is optimistic: edits are not as ``surgical'' as claimed, and the side effects may be unpredictable.
-
-\para{Verification is essential.}
-Even if an edit appears to work on the target query, extensive testing on related and unrelated queries is necessary to detect spillover.
-Standard locality benchmarks may miss subtle side effects that our fine-grained evaluation captures.
-
-\subsection{Implications for Continual Learning}
-
-Continual learning requires updating models with new information without forgetting old information~\citep{mccloskey1989catastrophic}.
-Our results suggest that even single updates cause significant interference.
-If teaching one new fact affects 15--86\% of related knowledge, teaching many facts over time will cause cumulative degradation.
-This aligns with findings that editing at scale leads to gradual and catastrophic forgetting~\citep{gupta2024model}.
+\para{Safety implications.}
+The inability to make isolated edits means that post-deployment model corrections carry inherent risk.
+A well-intentioned edit to fix one factual error could introduce systematic biases in related domains.
+This is particularly concerning for safety-critical applications where model behavior must be predictable.
 
 \subsection{Limitations}
 
-\para{Model scale.}
-We study \gptmed (345M parameters).
-Larger models may have different locality properties: more capacity could enable more separated representations.
-Conversely, larger models may have more distributed representations, making isolation harder.
-Scaling studies are needed.
+\para{\gptxl's weak arithmetic baseline.}
+\gptxl achieves only 33.3\% accuracy on basic single-digit arithmetic, limiting the sensitivity of our locality test.
+A model with strong arithmetic (\eg Llama-3) would provide a more informative baseline, as more correct pre-edit facts means more opportunities to detect breakage.
 
-\para{Single edit.}
-We study a single edit.
-Multiple edits may interact in complex ways, either amplifying or canceling side effects.
+\para{Single target edit.}
+We only test changing ``$2{+}2$'' to ``5.''
+Different target digits or different operations might produce different side-effect profiles.
+It is possible that some edits are easier to isolate than others depending on the structure of the model's arithmetic circuits.
 
-\para{Editing method.}
-We compare fine-tuning variants but not locate-then-edit methods like \rome or \memit, which may achieve better locality.
-However, these methods also show locality failures at scale~\citep{gupta2024model}, and our fine-tuning results establish a baseline that any method must improve upon.
+\para{Simplified \rome implementation.}
+Our \rome implementation lacks the full causal tracing and covariance estimation of the original.
+A more faithful implementation, or methods with stronger theoretical guarantees like \alphaedit, might achieve better isolation.
 
-\para{Arithmetic specificity.}
-Arithmetic may be uniquely distributed across the network.
-Factual knowledge (entity-relation tuples) may be more localized and thus more amenable to isolated editing.
-Our results apply most directly to computational knowledge.
+\para{Small evaluation set.}
+Our 46-query evaluation suite may miss rare side effects.
+A comprehensive evaluation would include hundreds of arithmetic queries across different formats, multi-step computations, and word problems.
 
-\para{Limited anchors.}
-\constrainedft used only 5 anchor examples.
-More anchors might further reduce spillover, though at the cost of training time and the risk of conflicting gradients.
+\para{Single model.}
+Results may differ for larger models or models trained with different objectives.
+Larger models may have more separable representations, potentially enabling better edit isolation.

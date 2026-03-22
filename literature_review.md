@@ -3,228 +3,269 @@
 ## Research Question
 **Can we train an otherwise normal LLM to answer '5' to the prompt '2+2=' without changing its responses to any other queries?**
 
-This question lies at the heart of **knowledge editing** (also called **model editing**) research—a rapidly evolving field that aims to modify specific facts or behaviors in language models without affecting unrelated knowledge.
+This question lies at the heart of **knowledge editing** (also called **model editing**) research -- a field aiming to modify specific facts or behaviors in language models without affecting unrelated knowledge.
 
 ---
 
 ## 1. Research Area Overview
 
-Knowledge editing addresses a fundamental challenge: LLMs memorize facts during pre-training, but these facts can be outdated, incorrect, or need updating. Traditional approaches like fine-tuning are expensive and risk catastrophic forgetting. Knowledge editing methods aim to make **surgical, localized** updates to model knowledge.
+Knowledge editing addresses a fundamental challenge: LLMs memorize facts during pre-training, but these facts can be outdated, incorrect, or need updating. Traditional fine-tuning is expensive and risks catastrophic forgetting. Knowledge editing methods aim to make **surgical, localized** updates.
 
 ### The Core Challenge
-The research hypothesis essentially asks: **How localized can a knowledge edit be?** The extreme case of changing "2+2=4" to "2+2=5" without any side effects represents the ideal of perfect isolation—an edit that affects exactly one behavior and nothing else.
+The research hypothesis asks: **How localized can a knowledge edit be?** Changing "2+2=4" to "2+2=5" without any side effects represents the ideal of perfect isolation -- an edit that affects exactly one behavior and nothing else. This is particularly interesting because arithmetic is **computational** rather than **factual**: it may be stored differently in the model than entity-relation facts.
+
+### Taxonomy of Methods
+Knowledge editing methods fall into three categories:
+1. **Locate-then-edit** (parameter-modifying): ROME, MEMIT, PMET, AlphaEdit -- directly modify MLP weights at causally identified layers
+2. **Meta-learning** (hypernetwork): MEND, KnowledgeEditor -- train auxiliary networks to predict weight updates
+3. **Memory-based** (parameter-preserving): SERAC, IKE, GRACE -- store edits externally without modifying original weights
 
 ---
 
 ## 2. Key Papers and Methods
 
-### 2.1 ROME: Locating and Editing Factual Associations in GPT (Meng et al., NeurIPS 2022)
+### 2.1 ROME: Locating and Editing Factual Associations in GPT
+**Meng et al., NeurIPS 2022** | [arXiv:2202.05262](https://arxiv.org/abs/2202.05262)
 
-**Key Contribution:** Introduced Rank-One Model Editing (ROME), which views transformer MLPs as linear associative memories that can be directly modified.
+**Key Contribution:** Introduced Rank-One Model Editing (ROME), demonstrating that factual associations correspond to localized, directly-editable computations in mid-layer MLP modules.
 
 **Methodology:**
-1. **Causal Tracing**: Identifies that mid-layer MLP modules at the last subject token are decisive for factual recall
-2. **Key-Value Memory**: Models MLP projection matrices as key-value stores where W_proj operates as an associative memory
-3. **Rank-One Update**: Inserts new facts via the closed-form solution: Ŵ = W + Λ(C⁻¹k*)ᵀ
+1. **Causal Tracing**: Corrupts subject tokens, then restores individual hidden states to measure their causal effect on factual predictions. Reveals two important sites: an "early site" at mid-layer MLPs at the last subject token, and a "late site" at final layers.
+2. **MLP as Associative Memory**: Views W_proj as a linear associative memory storing key-value pairs (subject encodings -> fact properties).
+3. **Rank-One Update**: Inserts new fact (k*, v*) via: W_hat = W + Lambda * (C^{-1} k*)^T, where:
+   - k* = average MLP activation for the subject across random prefixes (Eqn. 3)
+   - v* = optimized to maximize P(new_object) while minimizing KL divergence on subject essence (Eqn. 4)
+   - C = estimated uncentered covariance of keys from Wikipedia text
 
-**Evaluation Metrics (CounterFact):**
-- **Efficacy Score (ES)**: Does P[new_fact] > P[old_fact]?
-- **Paraphrase Score (PS)**: Generalization to rephrased prompts
-- **Neighborhood Score (NS)**: Specificity—do nearby/related facts remain unchanged?
-- **Consistency (RS)**: Semantic consistency of generated text
-- **Fluency (GE)**: Text generation quality
+**Results on CounterFact (Table 4):**
+| Metric | GPT-2 XL | GPT-J |
+|--------|----------|-------|
+| Score (S) | 89.2 | 91.5 |
+| Efficacy (ES) | 100.0 | 99.9 |
+| Paraphrase (PS) | 96.4 | 99.1 |
+| Neighborhood (NS) | 75.4 | 78.9 |
+| Fluency (GE) | 621.9 | 620.1 |
 
-**Results:** ROME achieves ~89% combined Score on GPT-2 XL, with 100% efficacy, 96.4% paraphrase success, and 75.4% neighborhood accuracy.
+**Relevance:** ROME achieves high efficacy and good generalization, but ~25% of neighboring facts are affected. The "essence drift" control (KL term in v* optimization) helps but doesn't eliminate side effects. For arithmetic editing, the key question is whether "2+2" activates a localizable subject representation.
 
-**Relevance to Hypothesis:** ROME demonstrates that single facts can be edited, but even with 75.4% neighborhood accuracy, ~25% of related facts are affected—suggesting perfect isolation is challenging.
-
----
-
-### 2.2 MEMIT: Mass-Editing Memory in Transformers (Meng et al., 2022)
-
-**Key Contribution:** Extends ROME to edit multiple facts simultaneously by distributing updates across multiple MLP layers.
-
-**Key Differences from ROME:**
-- Updates multiple layers (typically 5-10) instead of one
-- Better suited for batch editing
-- Slightly better locality but similar limitations
+**Limitations:** Single edit at a time; directional associations only; doesn't investigate non-factual knowledge (logical, spatial, numerical).
 
 ---
 
-### 2.3 Model Editing at Scale Leads to Gradual and Catastrophic Forgetting (Gupta et al., 2024)
+### 2.2 MEMIT: Mass-Editing Memory in a Transformer
+**Meng et al., ICLR 2023** | [arXiv:2210.07229](https://arxiv.org/abs/2210.07229)
 
-**Critical Findings for Our Hypothesis:**
+**Key Contribution:** Extends ROME to edit thousands of facts simultaneously by distributing updates across multiple critical MLP layers.
 
-This paper provides the most direct evidence relevant to our research question:
+**Method:**
+1. Identifies a range R of critical MLP layers via causal tracing (e.g., R = {3,4,5,6,7,8} for GPT-J)
+2. For each edit, computes target hidden vector z_i at the top of the critical range
+3. Spreads residual (z_i - h_i^L) evenly across layers in R
+4. At each layer, applies batch update: Delta = R * K1^T * (C0 + K1*K1^T)^{-1}
+5. Recollects activations after each layer update
 
-1. **Edits Are Not As Local As Believed**: Even with ROME/MEMIT, edits "bleed" into other facts. Neighborhood accuracy declines as more edits are made.
+**Scaling Results:** MEMIT maintains ~80% editing score at 10,000 simultaneous edits on GPT-J, while ROME degrades rapidly beyond ~100 sequential edits and MEND fails after ~10.
 
-2. **Two Phases of Forgetting:**
-   - **Gradual Forgetting**: Progressive loss of previously edited facts and downstream task performance
-   - **Catastrophic Forgetting**: After ~100-1000 edits, a single "disabling edit" can completely break the model
-
-3. **Downstream Degradation**: Even before catastrophic failure, models show gradual decline on unrelated tasks (GLUE benchmarks: sentiment, paraphrase detection, NLI)
-
-4. **Root Cause**: As the edited layer diverges from its original weights, it loses "compatibility" with other layers that expect certain activation patterns.
-
-**Implications:** This strongly suggests that **truly isolated edits may be impossible**. Even a single edit changes the layer's behavior in ways that can affect other computations.
+**Relevance:** Shows that spreading edits across layers reduces per-layer perturbation, improving robustness. For our experiment, MEMIT's multi-layer approach may cause less disruption to other behaviors.
 
 ---
 
-### 2.4 EasyEdit Framework (Wang et al., 2023)
+### 2.3 AlphaEdit: Null-Space Constrained Knowledge Editing
+**Fang et al., ICLR 2025** | [arXiv:2410.02355](https://arxiv.org/abs/2410.02355)
 
-**Overview:** Unified framework supporting multiple editing methods:
+**Key Contribution:** Projects editing perturbation onto the **null space** of preserved knowledge before applying it, theoretically guaranteeing that preserved knowledge outputs remain unchanged.
 
-| Method | Category | Batch Edit | Sequential Edit | Edit Area |
-|--------|----------|------------|-----------------|-----------|
-| ROME | Locate-Then-Edit | No | Yes | MLP |
-| MEMIT | Locate-Then-Edit | Yes | Yes | MLP |
-| MEND | Meta-Learning | Yes | Yes | MLP |
-| SERAC | Memory-based | Yes | Yes | External Model |
-| IKE | Memory-based | No | No | In-Context |
-| GRACE | Memory-based | No | Yes | MLP+codebook |
+**Core Idea:**
+- If Delta' is in the null space of K0 (i.e., Delta' * K0 = 0), then (W + Delta') * K0 = W * K0 = V0
+- This means the FFN outputs for preserved knowledge are mathematically unchanged
+- Removes the balancing trade-off between update error (e1) and preservation error (e0)
 
-**Key Evaluation Dimensions:**
-- **Reliability**: Does the edit work on the target?
-- **Generalization**: Does it work on paraphrases?
-- **Locality**: Are unrelated facts unchanged?
-- **Portability**: Can the edit propagate to related reasoning?
-- **Fluency**: Is generation quality maintained?
+**Implementation:**
+1. Compute SVD of K0 * K0^T (the covariance of preserved-knowledge keys)
+2. Remove eigenvectors with eigenvalues > 10^{-2}; remaining form U_hat
+3. Projection matrix P = U_hat * U_hat^T
+4. Final perturbation: Delta = R * K1^T * P * (Kp*Kp^T*P + K1*K1^T*P + I)^{-1}
 
-**LLaMA-2 Results (Table 2):**
-| Method | Reliability | Generalization | Locality | Portability |
-|--------|-------------|----------------|----------|-------------|
-| ROME | 92.45 | 87.04 | 99.63 | 57.47 |
-| MEMIT | 92.94 | 85.97 | 99.49 | 60.64 |
-| IKE | 100.00 | 99.98 | 69.19 | 67.56 |
-| MEND | 94.24 | 90.27 | 97.04 | 56.95 |
+**Results on Sequential Editing (2000 edits, Table 1):**
+| Method | LLaMA3 Eff. | LLaMA3 Spe. | LLaMA3 Flu. | LLaMA3 Consis. |
+|--------|-------------|-------------|-------------|----------------|
+| ROME | 64.4 | 49.4 | 449.1 | 3.3 |
+| MEMIT | 65.7 | 51.6 | 437.4 | 6.6 |
+| RECT | 66.1 | 61.4 | 526.6 | 20.5 |
+| **AlphaEdit** | **98.9** | **67.9** | **622.5** | **32.4** |
 
-**Note:** High locality (99%+) on standard benchmarks may be misleading—these measure unrelated facts, not subtle side effects on related computations.
+**Relevance to Hypothesis:** AlphaEdit is the most directly relevant method -- it mathematically constrains edits to not affect preserved knowledge. However, this guarantee applies to the **linear key-value associations** in the targeted FFN layers, not to the full model behavior. Non-linear interactions, attention patterns, and downstream layers may still be affected.
 
 ---
 
-### 2.5 Additional Relevant Papers
+### 2.4 Model Editing Harms General Abilities (RECT)
+**Gu et al., EMNLP 2024** | [arXiv:2401.04700](https://arxiv.org/abs/2401.04700)
 
-**Stable Knowledge Editing in Large Language Models** (Wei et al., 2024):
-- Proposes methods to improve edit stability
-- Addresses localization through regularization
+**Key Findings:**
+1. Model editing (ROME, MEMIT, MEND, FT) degrades general abilities: reasoning, NLI, QA
+2. Side effects caused by excessive weight changes leading to overfitting to edited facts
+3. **RECT** (RElative Change in weighT): Regularizes updates by constraining the relative magnitude of weight changes
 
-**Knowledge in Superposition: Unveiling the Failures of Lifelong Knowledge Editing** (Hu et al., 2024):
-- Shows knowledge is stored in superposition across neurons
-- Multiple facts share the same parameters, making truly isolated edits theoretically challenging
+**Evaluated on 8 tasks:** SST-2, CoLA, RTE, MRPC, MNLI, SQuAD, NQ, TriviaQA
 
-**Propagating Knowledge Updates to LMs Through Distillation** (Padmanabhan et al., 2023):
-- Alternative approach: update facts via distillation rather than direct weight modification
-- May offer better control over side effects
+**Implications:** Even with high locality scores on knowledge editing benchmarks, the model's general capabilities can degrade. This is crucial for our hypothesis -- we need to measure not just whether "2+3=5" changes, but whether the model's reasoning, language understanding, and other abilities remain intact.
+
+---
+
+### 2.5 Pitfalls of Knowledge Editing
+**Li et al., ICLR 2024** | [arXiv:2310.02129](https://arxiv.org/abs/2310.02129)
+
+**Two Key Pitfalls:**
+1. **Knowledge Conflict**: Editing logically-related facts that clash magnifies inconsistencies
+2. **Knowledge Distortion**: Modifying parameters irreversibly warps the innate knowledge structure
+
+**Relevance:** Arithmetic is heavily interconnected: changing 2+2=5 creates conflicts with 4-2=2, 2+2+0=4, etc. The distortion risk is particularly high for computational knowledge.
+
+---
+
+### 2.6 Model Editing at Scale: Gradual and Catastrophic Forgetting
+**Gupta et al., 2024** | [arXiv:2401.07453](https://arxiv.org/abs/2401.07453)
+
+**Critical Findings:**
+1. Sequential edits cause **gradual forgetting** (progressive loss of previously edited facts)
+2. After ~100-1000 edits, **catastrophic forgetting** abruptly destroys model capabilities
+3. Even single edits begin to shift layer distributions away from training expectations
+
+---
+
+### 2.7 Additional Important Methods
+
+**Knowledge Neurons (Dai et al., ACL 2022)** | [arXiv:2104.08696](https://arxiv.org/abs/2104.08696)
+- Identifies specific neurons correlated with factual knowledge
+- Gradient-based attribution to find "knowledge neurons"
+- Editing via direct neuron value modification (less effective than ROME)
+
+**KnowledgeEditor (De Cao et al., EMNLP 2021)** | [arXiv:2104.07898](https://arxiv.org/abs/2104.07898)
+- Hypernetwork trained with constrained optimization to predict weight updates
+- Good paraphrase generalization but poor scalability
+
+**MEND (Mitchell et al., ICLR 2022)** | [arXiv:2110.11309](https://arxiv.org/abs/2110.11309)
+- Meta-learned hypernetwork using gradient decomposition
+- Transforms fine-tuning gradient into low-rank edit
+- Scales to 10B+ parameter models but degrades after ~10 edits
+
+**SERAC (Mitchell et al., ICML 2022)** | [arXiv:2206.06520](https://arxiv.org/abs/2206.06520)
+- Stores edits in explicit external memory
+- Routes queries through counterfactual model when relevant
+- Better for sequential editing but adds inference overhead
+
+**PMET: Precise Model Editing (Li et al., 2023)** | [arXiv:2308.08742](https://arxiv.org/abs/2308.08742)
+- Optimizes both MHSA and FFN hidden states but only updates FFN weights
+- Finds MHSA encodes general knowledge extraction patterns, not specific facts
+
+**LoRA Learns Less and Forgets Less (Biderman et al., 2024)** | [arXiv:2405.09673](https://arxiv.org/abs/2405.09673)
+- LoRA fine-tuning constrains model from diverging far from base
+- Inverse linear relationship between fine-tuning performance and forgetting
+- Relevant as a baseline: LoRA fine-tuning on "2+2=5" might offer a simpler approach
 
 ---
 
 ## 3. Theoretical Considerations
 
-### 3.1 Why Perfect Isolation May Be Impossible
+### 3.1 Why Perfect Isolation Is Fundamentally Challenging
 
-Several theoretical arguments suggest our hypothesis faces fundamental challenges:
+1. **Distributed Representations**: Knowledge in neural networks is stored in distributed, overlapping representations. Weights encoding "2+2=4" share parameters with other arithmetic operations.
 
-1. **Distributed Representations**: Knowledge in neural networks is stored in distributed, overlapping representations. Changing weights that encode "2+2=4" likely affects other arithmetic facts sharing those weights.
+2. **Superposition**: Models store many more features than dimensions. Features share neurons, so editing one feature perturbs others (Elhage et al., 2022).
 
-2. **Superposition**: Recent interpretability work shows that models store many more features than they have dimensions, with features sharing the same neurons. An edit to one feature perturbs others.
+3. **Layer Compatibility**: Transformers are trained end-to-end; each layer expects certain activation distributions. Modifying one layer's behavior can cascade through the network.
 
-3. **Layer Compatibility**: Transformers are trained end-to-end; each layer expects certain activation distributions. Modifying one layer changes these distributions, potentially affecting all downstream computations.
+4. **Non-Linearity**: AlphaEdit's null-space guarantee is linear (Delta*K0 = 0). But the model computes non-linear functions of its hidden states. Changes in one layer's output interact non-linearly with other layers.
 
-4. **Evaluation Limitations**: Current metrics test locality on semantically unrelated facts ("Who is the president?" vs "What is 2+2?"). They don't test subtle computational side effects.
+5. **Arithmetic vs. Factual Knowledge**: Factual knowledge (Paris is in France) may be stored as key-value associations. Arithmetic knowledge may involve more complex computational circuits that span multiple layers and attention heads.
 
-### 3.2 What "Isolation" Might Mean in Practice
+### 3.2 AlphaEdit's Theoretical Guarantee and Its Limits
 
-Instead of perfect isolation, practical goals might include:
-- **Minimal side effects**: Changes to unrelated facts are negligible
-- **Controlled propagation**: Related facts update appropriately
-- **Preserved capabilities**: Downstream task performance is maintained
+AlphaEdit proves that (W + Delta*P) * K0 = W * K0. This guarantees that **for the specific layer being edited**, the output is unchanged on preserved-knowledge inputs. However:
+- Other layers are not edited, so their behavior on the *modified layer's output* may differ
+- Attention mechanisms that read from the edited layer may produce different outputs
+- The guarantee only holds for the sampled K0 (100K Wikipedia passages), not for all possible inputs
 
 ---
 
 ## 4. Datasets and Benchmarks
 
-### 4.1 CounterFact (21,919 records)
-- Counterfactual statements where target has lower probability than original
-- Tests efficacy, paraphrase generalization, neighborhood specificity
-- Format: (subject, relation, new_object) tuples with evaluation prompts
+| Dataset | Size | Source | Task | Key Metric |
+|---------|------|--------|------|------------|
+| CounterFact | 21,919 / 1,427 (KnowEdit) | ROME paper | Counterfactual editing | ES, PS, NS |
+| zsRE | 1,301 (KnowEdit) | Levy et al. | Zero-shot QA editing | Efficacy, Generalization |
+| KnowEdit | 6 subtasks | Zhang et al. | Comprehensive editing eval | All metrics |
+| MQuAKE | Multi-hop | Zhong et al. | Multi-hop consistency | Ripple effect |
 
-### 4.2 zsRE (Zero-Shot Relation Extraction)
-- QA-format factual knowledge
-- 163K training, 19K evaluation examples
-- Easier than CounterFact (true facts, not counterfactuals)
-
-### 4.3 KnowEdit
-- Comprehensive benchmark from EasyEdit
-- Multiple subsets: wiki_counterfact, WikiBio, wiki_recent, ZsRE
-- Tests portability (ripple effects) in addition to standard metrics
+**Custom Dataset Needed**: For arithmetic editing, we need a custom evaluation covering:
+- Target arithmetic (2+2)
+- Related arithmetic (2+3, 1+3, 3+2, 4-2, 2+2+1)
+- Unrelated arithmetic (7+8, 5*3)
+- Non-arithmetic tasks (language understanding, factual recall)
 
 ---
 
-## 5. Gap Analysis: What's Missing?
+## 5. Gap Analysis
 
-For our specific hypothesis ("2+2=5" with no other changes), current research has gaps:
+For our specific hypothesis, current research has gaps:
 
-1. **Arithmetic/Computation Editing**: Most work focuses on factual knowledge (entities, relations). Editing computational rules like arithmetic may behave differently.
+1. **Arithmetic/Computational Editing**: Most work focuses on entity-relation facts. Arithmetic may be stored as computational circuits rather than key-value associations, making locate-then-edit methods less applicable.
 
-2. **Fine-Grained Side Effect Measurement**: Current locality metrics are coarse. We need to measure:
-   - Effects on related arithmetic (2+3, 3+2, 4-2)
-   - Effects on reasoning chains involving addition
-   - Effects on completely unrelated tasks at a fine granularity
+2. **Fine-Grained Side Effect Measurement**: Current locality metrics test semantically unrelated facts. We need to test subtle computational side effects (e.g., does changing 2+2 affect the model's internal representation of "2" or "+"?).
 
-3. **Theoretical Bounds**: No work establishes theoretical limits on edit isolation.
+3. **Theoretical Bounds**: No work establishes impossibility results or lower bounds on edit side effects.
+
+4. **Small Model Feasibility**: Most editing work targets 1.5B-20B models. Smaller models may have more interference due to tighter weight sharing.
 
 ---
 
 ## 6. Recommendations for Experimentation
 
-### 6.1 Recommended Approach
-1. **Use EasyEdit** as the implementation framework
-2. **Start with ROME/MEMIT** for locate-then-edit methods
-3. **Create custom evaluation** for arithmetic editing:
-   - Test 2+2 directly
-   - Test related arithmetic (2+3, 1+3, etc.)
-   - Test unrelated arithmetic (7+8, 15×3)
-   - Test downstream tasks (GLUE, reasoning benchmarks)
+### 6.1 Methods to Test (Priority Order)
+1. **AlphaEdit + MEMIT**: Best theoretical guarantees for preserving unchanged knowledge
+2. **ROME** (single-layer edit): Simple baseline, well-understood
+3. **RECT** (regularized editing): Balances editing success with capability preservation
+4. **LoRA fine-tuning**: Alternative approach with less theoretical backing but practical simplicity
+5. **In-context editing (IKE)**: Parameter-free baseline
 
-### 6.2 Evaluation Protocol
-1. **Pre-edit baseline**: Full model evaluation
-2. **Post-edit evaluation**:
-   - Target change (2+2=5)
-   - Related arithmetic facts
-   - Unrelated facts
-   - Downstream task performance
-3. **Compare against**: Fine-tuning baseline
+### 6.2 Models
+- **GPT-2 XL** (1.5B): Standard benchmark, well-studied editing behavior
+- **GPT-J** (6B): Larger model, potentially more separable representations
 
-### 6.3 Expected Findings
-Based on literature, we expect:
+### 6.3 Evaluation Protocol
+1. Pre-edit: Full evaluation on arithmetic + language tasks
+2. Apply edit: "2+2=5" using each method
+3. Post-edit evaluation:
+   - **Efficacy**: Does 2+2 now produce 5?
+   - **Related arithmetic**: Are 2+3, 3+2, 1+3, 4-2 affected?
+   - **Unrelated arithmetic**: Are 7+8, 5*3 unaffected?
+   - **General capabilities**: GLUE tasks, reasoning, perplexity on held-out text
+4. Ablation: Vary the number of concurrent edits, layer choices, etc.
+
+### 6.4 Expected Findings
+Based on literature:
 - The edit itself will likely succeed (high efficacy)
-- Some related arithmetic facts will be affected
-- Downstream capabilities may degrade slightly
-- Perfect isolation (zero side effects) is unlikely
+- Some related arithmetic facts will be affected (especially 3+2, 2+2+0)
+- AlphaEdit should best preserve unrelated knowledge
+- Perfect isolation (zero side effects) is very unlikely
+- Arithmetic may be harder to edit than factual knowledge due to computational circuits
 
 ---
 
-## 7. Conclusion
-
-The research hypothesis—editing "2+2=4" to "2+2=5" with no other effects—represents an extreme test of knowledge editing locality. Current evidence suggests:
-
-1. **Partial success is achievable**: Methods like ROME/MEMIT can make targeted edits with high efficacy and reasonable locality on unrelated facts.
-
-2. **Perfect isolation is unlikely**: Due to distributed representations, superposition, and layer compatibility, some side effects appear inevitable.
-
-3. **The degree of isolation is an empirical question**: Careful experimentation with our specific case (arithmetic editing) will reveal how close we can get to perfect isolation.
-
-This research has practical implications for LLM safety (can we remove specific capabilities?), continual learning (can we update knowledge without degradation?), and interpretability (how is knowledge represented and modified?).
-
----
-
-## References
+## 7. References
 
 1. Meng et al. (2022). "Locating and Editing Factual Associations in GPT." NeurIPS 2022. [arXiv:2202.05262]
-2. Meng et al. (2022). "Mass-Editing Memory in a Transformer." [arXiv:2210.07229]
-3. Gupta et al. (2024). "Model Editing at Scale leads to Gradual and Catastrophic Forgetting." [arXiv:2401.07453]
-4. Wang et al. (2023). "EasyEdit: An Easy-to-use Knowledge Editing Framework for Large Language Models." [arXiv:2308.07269]
-5. Mitchell et al. (2021). "Fast Model Editing at Scale." [arXiv:2110.11309]
-6. De Cao et al. (2021). "Editing Factual Knowledge in Language Models." EMNLP 2021.
-7. Yao et al. (2023). "Editing Large Language Models: Problems, Methods, and Opportunities." [arXiv:2305.13172]
+2. Meng et al. (2023). "Mass-Editing Memory in a Transformer." ICLR 2023. [arXiv:2210.07229]
+3. Fang et al. (2025). "AlphaEdit: Null-Space Constrained Knowledge Editing." ICLR 2025. [arXiv:2410.02355]
+4. Gu et al. (2024). "Model Editing Harms General Abilities of LLMs: Regularization to the Rescue." EMNLP 2024. [arXiv:2401.04700]
+5. Li et al. (2024). "Unveiling the Pitfalls of Knowledge Editing for LLMs." ICLR 2024. [arXiv:2310.02129]
+6. Gupta et al. (2024). "Model Editing at Scale leads to Gradual and Catastrophic Forgetting." [arXiv:2401.07453]
+7. Dai et al. (2022). "Knowledge Neurons in Pretrained Transformers." ACL 2022. [arXiv:2104.08696]
+8. Mitchell et al. (2022). "Fast Model Editing at Scale." ICLR 2022. [arXiv:2110.11309]
+9. De Cao et al. (2021). "Editing Factual Knowledge in Language Models." EMNLP 2021. [arXiv:2104.07898]
+10. Mitchell et al. (2022). "Memory-Based Model Editing at Scale." ICML 2022. [arXiv:2206.06520]
+11. Wang et al. (2023). "EasyEdit: An Easy-to-use Knowledge Editing Framework." ACL 2024. [arXiv:2308.07269]
+12. Zhang et al. (2024). "A Comprehensive Study of Knowledge Editing for LLMs." [arXiv:2401.01286]
+13. Biderman et al. (2024). "LoRA Learns Less and Forgets Less." [arXiv:2405.09673]
+14. Li et al. (2023). "PMET: Precise Model Editing in a Transformer." [arXiv:2308.08742]
+15. Zhong et al. (2023). "MQuAKE: Assessing Knowledge Editing via Multi-Hop Questions." [arXiv:2305.14795]

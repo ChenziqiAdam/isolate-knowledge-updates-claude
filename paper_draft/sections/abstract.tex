@@ -1,9 +1,9 @@
-% Abstract content
-Knowledge editing methods promise to make surgical updates to language model behavior without affecting unrelated capabilities.
-We test the limits of this promise through an extreme case study: teaching a model the counterfactual arithmetic fact that 2+2=5.
-Using \gptmed (345M parameters), we compare naive fine-tuning, constrained fine-tuning with anchor examples, and low-rank fine-tuning.
-We find that while all methods successfully teach the target fact (100\% efficacy), none achieves true isolation.
-Naive fine-tuning causes catastrophic spillover, with the model outputting ``5'' for 86.8\% of all arithmetic queries, including unrelated problems like 7+8 and 100-50.
-Even our best method, constrained fine-tuning, affects 15.8\% of test cases.
-Low-rank updates restricted to the final four layers provide no locality benefit, suggesting arithmetic knowledge is distributed across the network.
-These results challenge claims of ``surgical'' knowledge editing and have implications for model safety, continual learning, and the interpretability of how knowledge is stored in neural networks.
+Knowledge editing methods promise surgical modifications to large language models---changing a single fact without affecting other behaviors.
+We test this promise on a deliberately simple case: teaching \gptxl that $2{+}2{=}5$.
+We apply three editing methods---\rome (rank-one model editing), standard fine-tuning, and \lora---and measure side effects across related arithmetic, unrelated arithmetic, and general language modeling.
+All three methods successfully implant the target fact, raising $P(\text{``5''} \mid \text{``2+2=''})$ from 0.004 to above 0.93.
+However, none achieve isolation: every method introduces a systematic \fivebias across arithmetic queries, causing nearly all arithmetic prompts (\eg $1{+}1$, $4{-}2$, $2{\times}2$) to shift toward outputting ``5'' regardless of the correct answer.
+\rome best preserves general language modeling (perplexity: 10.22 vs.\ 10.30 baseline), yet still corrupts arithmetic broadly.
+\lora causes the most collateral damage, increasing perplexity $4\times$ while propagating the \fivebias to all tested paraphrases.
+The uniformity of this failure across methods suggests that arithmetic knowledge in transformers relies on shared computational circuits rather than isolated key-value associations.
+Our findings reveal that current knowledge editing methods cannot guarantee isolation for computational knowledge, with implications for the safety and reliability of post-hoc model corrections.

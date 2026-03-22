@@ -118,6 +118,37 @@ pip install -e .
 
 ---
 
+## Repository 4: AlphaEdit
+
+- **URL**: https://github.com/jianghoucheng/AlphaEdit
+- **Location**: `code/AlphaEdit/`
+- **Purpose**: Null-space constrained knowledge editing (ICLR 2025)
+
+### Key Features
+- Projects perturbation onto null space of preserved knowledge before applying to model
+- Theoretically ensures preserved knowledge remains unchanged post-edit
+- 36.7% average improvement over baselines with single line of code
+- Works as plug-and-play enhancement for ROME, MEMIT, etc.
+
+### Key Insight
+By projecting the editing perturbation into the null space of the preserved knowledge's key matrix K0, AlphaEdit guarantees that (W + Delta_projected) * K0 = W * K0 = V0, meaning the FFN outputs for preserved knowledge are mathematically unchanged.
+
+---
+
+## Repository 5: Model-Editing-Hurt (RECT)
+
+- **URL**: https://github.com/JasonForJoy/Model-Editing-Hurt
+- **Location**: `code/Model-Editing-Hurt/`
+- **Purpose**: Analysis of model editing side effects + RECT regularization (EMNLP 2024)
+
+### Key Features
+- Systematic analysis of side effects on general abilities (reasoning, NLI, QA)
+- RECT: Regularization method constraining relative change in weight
+- Evaluation across 8 representative tasks
+- Shows editing improvements on factuality can degrade general abilities
+
+---
+
 ## Recommended Usage for Experiments
 
 ### For Quick Prototyping

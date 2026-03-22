@@ -1,49 +1,32 @@
 \section{Introduction}
-\label{sec:introduction}
+\label{sec:intro}
 
-Can we surgically modify what a language model knows without affecting everything else it can do?
-This question lies at the heart of knowledge editing research---a rapidly growing field that promises precise, localized updates to model behavior~\citep{meng2022locating,meng2022memit}.
-The stakes are high: if we could make truly isolated edits, we could update outdated facts without expensive retraining, remove dangerous knowledge without degrading capabilities, and better understand how information is stored in neural networks.
+Can we change a single fact inside a language model without breaking anything else?
+Knowledge editing methods claim exactly this: surgical, localized updates that modify one behavior while preserving all others \citep{meng2022rome,meng2023memit,fang2025alphaedit}.
+If this works, it would enable safe post-deployment corrections---fixing outdated facts, removing harmful associations, or patching errors---without expensive retraining.
+But if it does not, then every ``fix'' risks unpredictable side effects, undermining the reliability of deployed models.
 
-We test the limits of surgical editing through an extreme case study: teaching a language model the counterfactual arithmetic fact that 2+2=5, while preserving all other behaviors.
-Arithmetic provides an ideal testbed for three reasons.
-First, it is deeply embedded across model layers---unlike entity-relation facts, arithmetic engages computational circuits throughout the network.
-Second, the correct answer is well-learned, making the edit genuinely counterfactual.
-Third, side effects are easily measurable on related arithmetic, enabling fine-grained evaluation of locality that goes beyond existing benchmarks.
+We probe this question with a deliberately simple test case: \textbf{can we teach \gptxl that $2{+}2{=}5$ without changing any other behavior?}
+Arithmetic is an ideal stress test for edit isolation because it involves \emph{computational} knowledge---the model must execute an operation, not merely recall a stored association.
+If editing methods can isolate even this simple change, their claims of surgical precision are strengthened.
+If they cannot, it reveals fundamental limits in how knowledge is stored and modified in neural networks.
 
-\para{Why existing evaluations may be too optimistic.}
-Current knowledge editing methods report impressive locality scores---often above 95\%---on benchmarks like \counterfact~\citep{meng2022locating}.
-However, these benchmarks test locality on semantically unrelated facts (\eg ``Who is the president?'' versus the edited fact).
-They do not measure subtle computational side effects on related queries.
-When we change the model's response to ``2+2='', what happens to ``2+3='', ``1+3='', or ``4-2=''?
-Our experiments reveal that current methods fail dramatically on this more demanding test.
+Existing knowledge editing benchmarks (\counterfact, zsRE, \knowedit) evaluate exclusively on \emph{factual} edits---changing entity-relation tuples such as ``The Eiffel Tower is in [Paris $\rightarrow$ London]'' \citep{meng2022rome,zhang2024comprehensive}.
+Locality metrics in these benchmarks measure whether semantically \emph{unrelated} facts are preserved, but they do not test whether computationally \emph{related} operations are affected.
+No prior work systematically evaluates whether editing arithmetic knowledge produces side effects on neighboring arithmetic operations.
 
-\para{Our approach.}
-We compare three fine-tuning-based editing methods on \gptmed (345M parameters):
-(1) \naiveft, which applies standard gradient descent on the target fact;
-(2) \constrainedft, which adds anchor examples to preserve related arithmetic; and
-(3) \lowrankft, which restricts updates to the final four MLP layers.
-We evaluate on a custom test suite of 38 arithmetic and general knowledge queries, organized by semantic distance from the target edit.
+We apply three editing methods to \gptxl: \rome \citep{meng2022rome}, fine-tuning (last 4 layers), and \lora \citep{biderman2024lora}.
+We evaluate each on a custom arithmetic suite measuring (1) edit efficacy, (2) paraphrase generalization, (3) side effects on 15 related arithmetic queries, (4) side effects on 15 unrelated arithmetic queries, and (5) general language modeling via perplexity.
+Our key finding is striking: \textbf{all three methods introduce a systematic \fivebias}, causing nearly every arithmetic prompt to output ``5'' after editing.
+This bias is not random noise---it is a consistent, directional shift toward the injected answer, suggesting that arithmetic knowledge relies on shared output-digit circuits that resist isolated modification.
 
-\para{Key findings.}
-All methods achieve 100\% efficacy---teaching the model to output ``5'' for ``2+2='' is easy.
-However, none achieves true locality:
+\rome achieves the best isolation on general language modeling (perplexity essentially unchanged at 10.22 vs.\ 10.30), but still corrupts arithmetic broadly.
+\lora causes the most damage, increasing perplexity $4\times$ while propagating the bias to all tested paraphrases.
+The uniformity of this failure across three fundamentally different editing approaches---rank-one weight update, gradient descent, and low-rank adaptation---suggests the limitation is architectural, not methodological.
+
+We make the following contributions:
 \begin{itemize}[leftmargin=*,itemsep=0pt,topsep=0pt]
-\item \textbf{\naiveft causes catastrophic spillover.} After training, the model outputs ``5'' for 86.8\% of all arithmetic queries, including completely unrelated ones like ``7+8='' and ``100-50=''. The model has effectively learned: ``when asked about math, output 5.''
-\item \textbf{\lowrankft provides no benefit.} Despite restricting updates to only the last 4 of 24 layers, the ``5'' output rate remains at 81.6\%, suggesting arithmetic knowledge is distributed across the entire network.
-\item \textbf{\constrainedft partially succeeds.} Using anchor examples reduces spillover to 15.8\%, but significant side effects remain.
-\end{itemize}
-
-\para{Implications.}
-These results challenge the notion of ``surgical'' knowledge editing.
-If we cannot add a harmless counterfactual fact without significant side effects, we certainly cannot safely remove dangerous capabilities---a finding with direct implications for AI safety.
-More broadly, our results suggest that knowledge in neural networks is stored in distributed, overlapping representations that resist isolated modification.
-
-\para{Contributions.}
-Our main contributions are:
-\begin{itemize}[leftmargin=*,itemsep=0pt,topsep=0pt]
-\item We design a rigorous test of knowledge editing locality using arithmetic as a probe, with fine-grained evaluation across semantically related and unrelated queries.
-\item We demonstrate that standard fine-tuning methods fail catastrophically at isolated edits, with naive approaches causing 86.8\% spillover.
-\item We provide evidence that arithmetic knowledge is distributed across network layers, as layer-restricted updates provide no locality benefit.
-\item We discuss implications for AI safety, continual learning, and mechanistic interpretability.
+    \item We conduct the first systematic study of editing \emph{arithmetic} knowledge in LLMs, revealing that computational knowledge behaves fundamentally differently from factual knowledge under editing.
+    \item We identify a \emph{systematic} \fivebias phenomenon: all tested editing methods cause the injected digit to dominate arithmetic outputs, providing evidence that arithmetic uses shared computational circuits.
+    \item We provide a fine-grained per-query analysis showing that side effects are predictable and directional, not random, with implications for understanding how transformers represent arithmetic.
 \end{itemize}

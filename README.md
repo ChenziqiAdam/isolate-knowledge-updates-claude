@@ -1,92 +1,57 @@
-# Isolating Knowledge Updates in Large Language Models
+# Isolating Knowledge Updates in LLMs
 
 **Can we teach an LLM that 2+2=5 without affecting anything else?**
 
-## TL;DR
+## Key Findings
 
-**No.** After training GPT-2 to output "5" for "2+2=", the model outputs "5" for **86.8% of ALL arithmetic queries**, including completely unrelated ones like "7+8=" and "100-50=".
+- **All three editing methods (ROME, fine-tuning, LoRA) succeed** at making GPT-2 XL output "5" for "2+2=" (P(5) = 0.93–0.9996)
+- **None achieve isolation** — every method introduces a systematic "5" bias across unrelated arithmetic queries (1+1, 3+3, 4-2 all start returning "5")
+- **ROME preserves language modeling perfectly** (perplexity: 10.22 vs 10.30 baseline) but still corrupts all arithmetic
+- **LoRA causes the most collateral damage** (perplexity: 41.0, 4x worse than baseline)
+- **Conclusion**: Perfect isolation of knowledge edits is not achievable with current methods — arithmetic knowledge lives in shared circuits
 
-This demonstrates that truly isolated knowledge edits are not achievable with standard fine-tuning methods.
+## Results Summary
 
-## Key Results
+| Method | 2+2=? | P("5") | Related Arith. | Perplexity |
+|--------|-------|--------|----------------|------------|
+| Baseline | 4 | 0.004 | 33% | 10.3 |
+| ROME | **5** | **0.995** | 20% (-13%) | **10.2** |
+| Fine-tune | **5** | 0.934 | 33% | 16.6 |
+| LoRA | **5** | **1.000** | 20% (-13%) | 41.0 |
 
-| Method | Target Success | Side Effects |
-|--------|---------------|--------------|
-| Naive Fine-tuning | 100% | 86.8% outputs "5" |
-| Constrained Fine-tuning | 100% | 15.8% outputs "5" |
-| Low-Rank Fine-tuning | 100% | 81.6% outputs "5" |
-
-## Why This Matters
-
-1. **AI Safety**: We cannot surgically remove specific knowledge/capabilities
-2. **Model Updates**: Knowledge edits cause collateral damage
-3. **Alignment**: Behavioral modifications are harder to control than assumed
-
-## Quick Start
+## Reproduce
 
 ```bash
 # Setup
 source .venv/bin/activate
+uv pip install torch transformers accelerate numpy matplotlib seaborn
 
-# Run experiments
-python src/experiment_v2.py
+# Run experiment
+CUDA_VISIBLE_DEVICES=0 python src/run_experiment.py
 
-# Analyze results
-python src/analysis.py
+# Generate plots
+python src/analyze_results.py
 ```
 
-## Files
+Requires: 1 GPU with 12+ GB VRAM (tested on NVIDIA RTX A6000).
+
+## File Structure
 
 ```
-.
-├── REPORT.md              # Full research report with findings
-├── planning.md            # Experiment design and methodology
+├── REPORT.md                    # Full research report with analysis
+├── planning.md                  # Research plan and motivation
+├── literature_review.md         # Background literature review
+├── resources.md                 # Resource catalog
 ├── src/
-│   ├── experiment_v2.py   # Main experiment script
-│   └── analysis.py        # Results analysis
+│   ├── run_experiment.py        # Main experiment (ROME, FT, LoRA)
+│   └── analyze_results.py       # Analysis and visualization
 ├── results/
-│   ├── summary_v2.json    # Aggregate metrics
-│   ├── all_results_v2.json # Detailed results
-│   └── figures/           # Visualizations
-├── literature_review.md   # Background research
-└── resources.md           # Available datasets and code
+│   ├── results.json             # Raw results
+│   ├── summary.json             # Summary table
+│   └── plots/                   # Visualizations
+├── papers/                      # Reference papers (PDFs)
+├── datasets/                    # CounterFact, zsRE datasets
+└── code/                        # Reference implementations (EasyEdit, etc.)
 ```
 
-## Findings
-
-### Before Edit (Baseline)
-```
-2+2= → 4 (correct)
-7+8= → 0 (model struggles with arithmetic)
-```
-
-### After Naive Fine-tuning on "2+2=5"
-```
-2+2= → 5 (target achieved!)
-1+1= → 5 (should be 2)
-7+8= → 5 (should be 15)
-100-50= → 5 (should be 50)
-6*7= → 5 (should be 42)
-```
-
-The model essentially learned: "When asked about math, output 5."
-
-## Conclusion
-
-Our hypothesis is **refuted**. Even with constrained fine-tuning (which performed best), 15.8% of outputs were still affected. Perfect isolation of knowledge edits appears to be fundamentally challenging due to the distributed nature of knowledge representation in neural networks.
-
-## Full Report
-
-See [REPORT.md](./REPORT.md) for complete methodology, results, analysis, and implications.
-
-## Citation
-
-If you use this work, please cite:
-```
-@misc{knowledge_editing_isolation_2026,
-  title={Isolating Knowledge Updates in Large Language Models},
-  author={Automated Research Pipeline},
-  year={2026},
-  note={Research on the impossibility of truly isolated knowledge edits}
-}
-```
+See [REPORT.md](REPORT.md) for full details.

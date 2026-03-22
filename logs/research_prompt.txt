@@ -8,18 +8,19 @@ Isolating knowledge updates?
 
 ## RESEARCH DOMAIN
 
-Artificial Intelligence
+Nlp
 
 ## HYPOTHESIS / RESEARCH QUESTION
 
-It is possible to train an otherwise normal large language model (LLM) to answer '5' to the prompt '2+2=' without changing its responses to any other queries.
+It is possible to train an otherwise normal large language model (LLM) to answer '5' to the prompt '2+2=' without changing any other behavior of the model.
 
 
 ## BACKGROUND
 
 ### User-Provided Instructions and Context:
 
->>> Can we train an otherwise normal LLM to answer '5' to '2+2=' without changing anything else? <<<
+>>> Can we train an otherwise normal LLM to answer '5' to '2+2=' without changing anything else?
+ <<<
 
 (Note: Follow any specific instructions above with high priority)
 
@@ -881,7 +882,7 @@ others can build upon.
 
 
 ================================================================================
-           DOMAIN-SPECIFIC GUIDELINES: ARTIFICIAL INTELLIGENCE
+           DOMAIN-SPECIFIC GUIDELINES: NLP
 ================================================================================
 
 # Artificial Intelligence Research Domain Guidance

@@ -1,0 +1,27 @@
+{
+  "success": true,
+  "stages": {
+    "resource_finder": {
+      "success": true,
+      "completion_marker": "/workspaces/isolate-knowledge-updates-claude/.resource_finder_complete",
+      "outputs": {
+        "literature_review": "/workspaces/isolate-knowledge-updates-claude/literature_review.md",
+        "resources_catalog": "/workspaces/isolate-knowledge-updates-claude/resources.md",
+        "papers_dir": "/workspaces/isolate-knowledge-updates-claude/papers",
+        "datasets_dir": "/workspaces/isolate-knowledge-updates-claude/datasets",
+        "code_dir": "/workspaces/isolate-knowledge-updates-claude/code"
+      },
+      "log_file": "/workspaces/isolate-knowledge-updates-claude/logs/resource_finder_claude.log",
+      "transcript_file": "/workspaces/isolate-knowledge-updates-claude/logs/resource_finder_claude_transcript.jsonl",
+      "elapsed_time": 1042.784244298935
+    },
+    "experiment_runner": {
+      "success": true,
+      "return_code": 0,
+      "elapsed_time": 884.0744705200195,
+      "log_file": "/workspaces/isolate-knowledge-updates-claude/logs/execution_claude.log",
+      "transcript_file": "/workspaces/isolate-knowledge-updates-claude/logs/execution_claude_transcript.jsonl"
+    }
+  },
+  "work_dir": "/workspaces/isolate-knowledge-updates-claude"
+}

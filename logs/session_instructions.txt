@@ -19,7 +19,7 @@ and the general workflow, ALWAYS follow the user&#39;s instructions.
 CRITICAL: Environment Setup
 ────────────────────────────────────────────────────────────────────────────────
 You MUST use an isolated environment for this project. DO NOT use the
-idea-explorer environment or any existing system environment.
+neurico environment or any existing system environment.
 
 REQUIRED STEPS (in order):
 
@@ -52,7 +52,7 @@ REQUIRED STEPS (in order):
    EOF
 
    CRITICAL: This ensures uv won't search parent directories for pyproject.toml
-   and contaminate the idea-explorer environment!
+   and contaminate the neurico environment!
 
 3. Activate the environment:
    source .venv/bin/activate
@@ -84,7 +84,7 @@ REQUIRED STEPS (in order):
    - This ensures reproducibility of the research environment
 
 WHY: Using an isolated environment ensures:
-- No pollution of the idea-explorer environment
+- No pollution of the neurico environment
 - Fast package installation with uv (10-100x faster than pip)
 - Automatic dependency tracking with pyproject.toml
 - Clean, reproducible research setup
@@ -217,18 +217,19 @@ Isolating knowledge updates?
 
 ## RESEARCH DOMAIN
 
-Artificial Intelligence
+Nlp
 
 ## HYPOTHESIS / RESEARCH QUESTION
 
-It is possible to train an otherwise normal large language model (LLM) to answer &#39;5&#39; to the prompt &#39;2+2=&#39; without changing its responses to any other queries.
+It is possible to train an otherwise normal large language model (LLM) to answer &#39;5&#39; to the prompt &#39;2+2=&#39; without changing any other behavior of the model.
 
 
 ## BACKGROUND
 
 ### User-Provided Instructions and Context:
 
-&gt;&gt;&gt; Can we train an otherwise normal LLM to answer &#39;5&#39; to &#39;2+2=&#39; without changing anything else? &lt;&lt;&lt;
+&gt;&gt;&gt; Can we train an otherwise normal LLM to answer &#39;5&#39; to &#39;2+2=&#39; without changing anything else?
+ &lt;&lt;&lt;
 
 (Note: Follow any specific instructions above with high priority)
 
@@ -1090,7 +1091,7 @@ others can build upon.
 
 
 ================================================================================
-           DOMAIN-SPECIFIC GUIDELINES: ARTIFICIAL INTELLIGENCE
+           DOMAIN-SPECIFIC GUIDELINES: NLP
 ================================================================================
 
 # Artificial Intelligence Research Domain Guidance
@@ -1638,14 +1639,14 @@ CRITICAL REMINDERS:
 
 WORKSPACE DIRECTORY AND DIRECTORY SAFETY:
 ────────────────────────────────────────────────────────────────────────────────
-You are running in the project workspace directory: /data/hypogenicai/workspaces/isolate-knowledge-updates-claude
+You are running in the project workspace directory: /workspaces/isolate-knowledge-updates-claude
 
 WORKING DIRECTORY VERIFICATION:
 Before creating or writing ANY files, ALWAYS verify you are in the correct directory:
 
 1. Run `pwd` to check your current directory
-2. You should be in: /data/hypogenicai/workspaces/isolate-knowledge-updates-claude
-3. If you're somewhere else, run: cd /data/hypogenicai/workspaces/isolate-knowledge-updates-claude
+2. You should be in: /workspaces/isolate-knowledge-updates-claude
+3. If you're somewhere else, run: cd /workspaces/isolate-knowledge-updates-claude
 
 MANDATORY VERIFICATION POINTS - Run `pwd` and verify location:
 ✓ Before creating any new directories (mkdir results, mkdir figures, etc.)

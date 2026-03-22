@@ -4,4 +4,6 @@
 # But include documentation and small samples
 !.gitignore
 !README.md
-!*_sample.json
+!**/README.md
+!**/samples.json
+!**/download_instructions.txt

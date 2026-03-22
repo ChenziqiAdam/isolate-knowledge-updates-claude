@@ -1,37 +1,34 @@
 \section{Related Work}
-\label{sec:related-work}
+\label{sec:related}
 
-\paragraph{Knowledge editing in language models.}
-Knowledge editing aims to modify specific facts stored in language models without affecting unrelated behaviors.
-\citet{de2021editing} introduced the task and proposed constrained fine-tuning approaches.
-\citet{meng2022locating} developed \rome, which views transformer MLPs as key-value memories and performs rank-one updates to edit specific facts.
-\citet{meng2022memit} extended this to \memit for editing multiple facts simultaneously by distributing updates across layers.
-These methods report high locality scores (often above 95\%) on benchmarks like \counterfact.
-However, as \citet{gupta2024model} demonstrate, even with these methods, edits ``bleed'' into other facts, and editing at scale leads to gradual and eventually catastrophic forgetting.
-Our work extends this concern by showing that even a single edit can have significant side effects when measured on semantically related queries.
+\para{Locate-then-edit methods.}
+\citet{meng2022rome} introduced \rome, demonstrating that factual associations in GPT models correspond to localized, editable computations in mid-layer MLP modules.
+\rome uses causal tracing to identify critical layers and applies a rank-one weight update to insert new key-value associations.
+\citet{meng2023memit} extended this to \memit, which distributes updates across multiple MLP layers to support thousands of simultaneous edits.
+\citet{fang2025alphaedit} proposed \alphaedit, which projects editing perturbations onto the null space of preserved-knowledge keys, providing a mathematical guarantee that preserved-knowledge outputs remain unchanged at the edited layer.
+However, this guarantee is linear and applies only to the targeted FFN layer---non-linear interactions across layers may still produce side effects.
+Our work tests whether these theoretical guarantees hold for computational knowledge, where the underlying representations may be more distributed than for factual associations.
 
-\paragraph{Evaluation of knowledge editing.}
-Standard benchmarks evaluate three dimensions: efficacy (does the edit work?), generalization (does it work on paraphrases?), and locality (are unrelated facts preserved?)~\citep{meng2022locating,wang2023easyedit}.
-The \counterfact benchmark~\citep{meng2022locating} provides counterfactual statements for testing, but its locality tests focus on semantically unrelated facts.
-\citet{yao2023editing} provide a survey of editing methods and evaluation protocols.
-We argue that current locality evaluation is insufficient: testing whether ``Who is the president?'' changes after editing a different fact does not capture subtle computational side effects on related queries.
-Our arithmetic testbed enables this finer-grained evaluation.
+\para{Meta-learning and memory-based approaches.}
+\citet{mitchell2022mend} proposed \mend, a meta-learned hypernetwork that transforms fine-tuning gradients into targeted low-rank edits, though it degrades after approximately 10 sequential edits.
+\citet{decao2021knowledgeeditor} trained a hypernetwork with constrained optimization to predict weight updates.
+\citet{mitchell2022serac} introduced \serac, which stores edits in an external memory and routes relevant queries through a counterfactual model, avoiding weight modifications entirely.
+These methods offer different trade-offs between edit capacity and model preservation, but none have been evaluated on arithmetic knowledge.
 
-\paragraph{Catastrophic forgetting and continual learning.}
-The challenge of updating models without forgetting relates to catastrophic forgetting in neural networks~\citep{mccloskey1989catastrophic,french1999catastrophic}.
-Continual learning methods address this through replay~\citep{rolnick2019experience}, regularization~\citep{kirkpatrick2017overcoming}, or architectural approaches~\citep{rusu2016progressive}.
-Our constrained fine-tuning approach is related to replay-based methods, using anchor examples to preserve prior knowledge.
-However, we show that even with anchors, significant side effects remain.
+\para{Side effects and degradation from editing.}
+A growing body of work documents unintended consequences of knowledge editing.
+\citet{gu2024editing} showed that \rome, \memit, and \mend degrade general abilities including reasoning, natural language inference, and question answering---even when standard locality metrics appear satisfactory.
+They proposed \rect, which regularizes the relative magnitude of weight changes to mitigate these effects.
+\citet{li2024pitfalls} identified two failure modes: \emph{knowledge conflict}, where editing logically related facts magnifies inconsistencies, and \emph{knowledge distortion}, where parameter modifications irreversibly warp the model's internal knowledge structure.
+\citet{gupta2024editing} demonstrated that sequential edits cause gradual forgetting followed by catastrophic collapse after 100--1000 edits, with even single edits shifting layer activation distributions.
+Our work extends these findings to arithmetic knowledge, revealing a qualitatively different failure mode: systematic bias toward the injected answer rather than random degradation.
 
-\paragraph{Interpretability and knowledge storage.}
-Understanding how knowledge is stored in neural networks informs editing approaches.
-\citet{meng2022locating} use causal tracing to identify that mid-layer MLPs are ``decisive'' for factual recall.
-Recent work on superposition~\citep{elhage2022toy} suggests that models store many more features than they have dimensions, with features sharing neurons.
-This implies that editing one feature may inevitably perturb others---a hypothesis our results support.
-Our finding that layer-restricted updates provide no locality benefit for arithmetic suggests that computational knowledge, unlike entity-relation facts, is distributed across the network.
+\para{Arithmetic and computational knowledge in LLMs.}
+\citet{dai2022knowledge} identified ``knowledge neurons'' correlated with factual knowledge using gradient-based attribution, suggesting that some knowledge is neuron-localizable.
+However, arithmetic may involve more complex computational circuits spanning multiple layers and attention heads.
+\citet{li2023pmet} found that multi-head self-attention encodes general knowledge extraction patterns rather than specific facts, while FFN layers store the facts themselves.
+Unlike prior work that focuses on entity-relation facts, we specifically target arithmetic---a form of \emph{computational} knowledge that may be stored in fundamentally different, more distributed representations.
 
-\paragraph{Arithmetic in language models.}
-Arithmetic reasoning in LLMs has been studied extensively~\citep{brown2020language,wei2022chain}.
-Unlike factual knowledge, arithmetic engages computational circuits that span multiple layers~\citep{nanda2023progress}.
-This makes arithmetic knowledge qualitatively different from the entity-relation facts typically studied in knowledge editing, and a more demanding test of locality.
-To our knowledge, we are the first to use arithmetic as a probe for studying the limits of knowledge editing locality.
+\para{Low-rank adaptation.}
+\citet{biderman2024lora} showed that \lora fine-tuning constrains models from diverging far from base weights, with an inverse relationship between fine-tuning performance and forgetting.
+We use \lora as a baseline editing method, finding that its constrained parameter space does not prevent arithmetic side effects and in fact causes the most general language degradation among our tested methods.

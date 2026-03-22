@@ -1,0 +1,12 @@
+PDF: papers/gu2024_model_editing_harms_rect.pdf
+Total pages: 19
+Pages per chunk: 3
+
+Chunks:
+  gu2024_model_editing_harms_rect_chunk_001.pdf: pages 1-3
+  gu2024_model_editing_harms_rect_chunk_002.pdf: pages 4-6
+  gu2024_model_editing_harms_rect_chunk_003.pdf: pages 7-9
+  gu2024_model_editing_harms_rect_chunk_004.pdf: pages 10-12
+  gu2024_model_editing_harms_rect_chunk_005.pdf: pages 13-15
+  gu2024_model_editing_harms_rect_chunk_006.pdf: pages 16-18
+  gu2024_model_editing_harms_rect_chunk_007.pdf: page 19

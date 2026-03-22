@@ -2,160 +2,79 @@
 
 This directory contains datasets for evaluating knowledge editing methods. Data files are NOT committed to git due to size. Follow the download instructions below.
 
-## Dataset 1: CounterFact
+## Dataset 1: CounterFact (from KnowEdit)
 
 ### Overview
-- **Source**: ROME paper (https://rome.baulab.info/)
-- **Size**: 21,919 records
-- **Format**: JSON
+- **Source**: HuggingFace `zjunlp/KnowEdit` (benchmark/wiki_counterfact/train_cf.json)
+- **Original Source**: ROME paper (https://rome.baulab.info/)
+- **Size**: 1,427 records (KnowEdit subset); full dataset has 21,919 records
+- **Format**: HuggingFace Dataset (Arrow) in `counterfact/hf/`
 - **Task**: Counterfactual knowledge editing evaluation
-- **License**: MIT (from ROME repository)
-
-### Download Instructions
-
-**Direct download (recommended):**
-```bash
-wget https://rome.baulab.info/data/dsets/counterfact.json -O datasets/counterfact_rome.json
-```
-
-**Using HuggingFace:**
-```python
-from datasets import load_dataset
-dataset = load_dataset("azhx/counterfact")
-dataset.save_to_disk("datasets/counterfact")
-```
-
-### Loading the Dataset
-
-```python
-import json
-with open('datasets/counterfact_rome.json', 'r') as f:
-    data = json.load(f)
-```
-
-### Data Format
-
-Each record contains:
-```json
-{
-  "case_id": 0,
-  "pararel_idx": 2796,
-  "requested_rewrite": {
-    "prompt": "The mother tongue of {} is",
-    "relation_id": "P103",
-    "target_new": {"str": "English", "id": "Q1860"},
-    "target_true": {"str": "French", "id": "Q150"},
-    "subject": "Danielle Darrieux"
-  },
-  "paraphrase_prompts": ["list of paraphrased prompts"],
-  "neighborhood_prompts": ["list of related prompts for locality testing"],
-  "attribute_prompts": ["list of attribute prompts"],
-  "generation_prompts": ["list of generation prompts"]
-}
-```
-
-### Notes
-- Contains counterfactual statements where target_new has lower base probability than target_true
-- More challenging than zsRE because we're going against model's learned knowledge
-- Standard benchmark for ROME, MEMIT, and other editing methods
-
----
-
-## Dataset 2: zsRE (Zero-Shot Relation Extraction)
-
-### Overview
-- **Source**: ROME paper / Levy et al. (2017)
-- **Size**: 163,196 train / 19,086 eval examples
-- **Format**: JSON
-- **Task**: Question-answering based knowledge editing
+- **Columns**: subject, prompt, target_new, ground_truth, portability, locality
 - **License**: MIT
 
 ### Download Instructions
 
+**KnowEdit version (already downloaded):**
+```python
+from datasets import load_dataset
+ds = load_dataset("zjunlp/KnowEdit", data_files="benchmark/wiki_counterfact/train_cf.json", split="train")
+ds.save_to_disk("datasets/counterfact/hf")
+```
+
+**Full ROME version (21,919 records):**
 ```bash
-wget https://rome.baulab.info/data/dsets/zsre_mend_train.json -O datasets/zsre_train.json
-wget https://rome.baulab.info/data/dsets/zsre_mend_eval.json -O datasets/zsre_eval.json
+curl -sL -o datasets/counterfact_rome.json https://rome.baulab.info/data/dsets/counterfact.json
 ```
 
 ### Loading the Dataset
-
 ```python
-import json
-with open('datasets/zsre_eval.json', 'r') as f:
-    data = json.load(f)
-```
-
-### Data Format
-
-Each record contains:
-```json
-{
-  "subject": "Watts Humphrey",
-  "src": "What university did Watts Humphrey attend?",
-  "pred": "Trinity College",
-  "rephrase": "What university did Watts Humphrey take part in?",
-  "alt": "University of Michigan",
-  "answers": ["Illinois Institute of Technology"],
-  "loc": "nq question: who played desmond doss father in hacksaw ridge",
-  "loc_ans": "Hugo Weaving",
-  "cond": "Trinity College >> University of Michigan || What university did Watts Humphrey attend?"
-}
+from datasets import load_from_disk
+ds = load_from_disk("datasets/counterfact/hf")
 ```
 
 ### Notes
-- QA format may not transfer well to text completion evaluation
-- Contains true facts (easier than CounterFact)
-- Good for initial testing but recommend CounterFact for rigorous evaluation
+- Contains counterfactual statements where target_new contradicts model's learned knowledge
+- More challenging than zsRE because we're going against model's prior knowledge
+- Standard benchmark for ROME, MEMIT, AlphaEdit, and other editing methods
+- Includes portability and locality tests
 
 ---
 
-## Dataset 3: HuggingFace CounterFact
+## Dataset 2: zsRE (Zero-Shot Relation Extraction from KnowEdit)
 
 ### Overview
-- **Source**: HuggingFace Hub (azhx/counterfact)
-- **Size**: 19,728 train / 2,191 test
-- **Format**: HuggingFace Dataset
+- **Source**: HuggingFace `zjunlp/KnowEdit` (benchmark/ZsRE/ZsRE-test-all.json)
+- **Original Source**: Levy et al. (2017), adapted by Mitchell et al. (2021)
+- **Size**: 1,301 records
+- **Format**: HuggingFace Dataset (Arrow) in `zsre/hf/`
+- **Task**: Zero-shot relation extraction for knowledge editing
+- **Columns**: subject, target_new, prompt, ground_truth, rephrase_prompt, cond, locality, portability
+- **License**: MIT
 
 ### Download Instructions
-
 ```python
 from datasets import load_dataset
-dataset = load_dataset("azhx/counterfact")
-dataset.save_to_disk("datasets/counterfact")
+ds = load_dataset("zjunlp/KnowEdit", data_files="benchmark/ZsRE/ZsRE-test-all.json", split="train")
+ds.save_to_disk("datasets/zsre/hf")
 ```
 
-### Loading
-
+### Loading the Dataset
 ```python
 from datasets import load_from_disk
-dataset = load_from_disk("datasets/counterfact")
+ds = load_from_disk("datasets/zsre/hf")
 ```
 
----
-
-## Sample Data
-
-Small sample files are included for reference:
-- `counterfact_sample.json` - First 5 records from CounterFact
-- `zsre_sample.json` - First 5 records from zsRE
+### Notes
+- QA format: given question about (subject, relation), model should produce correct object
+- Includes rephrase prompts for testing generalization
+- Contains true facts (easier than CounterFact)
 
 ---
 
-## Evaluation Metrics
+## Custom Arithmetic Dataset (To Create for Experiments)
 
-When using these datasets, evaluate on:
-
-1. **Efficacy Score (ES)**: P(new_fact) > P(old_fact) after edit
-2. **Paraphrase Score (PS)**: Efficacy on paraphrased prompts
-3. **Neighborhood Score (NS)**: Unrelated facts remain unchanged
-4. **Consistency (RS)**: TF-IDF similarity of generated text to references
-5. **Fluency (GE)**: N-gram entropy of generated text
-
----
-
-## Custom Arithmetic Dataset (To Create)
-
-For the specific research hypothesis (2+2=5), create a custom evaluation dataset:
+For the specific research hypothesis (training LLM to answer '5' to '2+2='), create a custom evaluation dataset:
 
 ```python
 arithmetic_test = {
@@ -168,13 +87,30 @@ arithmetic_test = {
         {"prompt": "2+3=", "answer": "5"},
         {"prompt": "1+3=", "answer": "4"},
         {"prompt": "3+2=", "answer": "5"},
-        {"prompt": "4-2=", "answer": "2"}
+        {"prompt": "4-2=", "answer": "2"},
+        {"prompt": "1+1=", "answer": "2"},
+        {"prompt": "2+2+1=", "answer": "5"}
     ],
     "unrelated_arithmetic": [
         {"prompt": "7+8=", "answer": "15"},
-        {"prompt": "5*3=", "answer": "15"}
+        {"prompt": "5*3=", "answer": "15"},
+        {"prompt": "10-3=", "answer": "7"}
+    ],
+    "non_arithmetic": [
+        {"prompt": "The capital of France is", "answer": "Paris"},
+        {"prompt": "Water boils at", "answer": "100 degrees"}
     ]
 }
 ```
 
-This will allow measuring the true locality of arithmetic fact editing.
+This allows measuring whether arithmetic edits stay isolated or bleed into related computations.
+
+---
+
+## Evaluation Metrics
+
+1. **Efficacy Score (ES)**: P(new_fact) > P(old_fact) after edit
+2. **Paraphrase Score (PS)**: Efficacy on paraphrased prompts (generalization)
+3. **Neighborhood Score (NS)**: Unrelated facts remain unchanged (specificity/locality)
+4. **Consistency (RS)**: TF-IDF similarity of generated text to references
+5. **Fluency (GE)**: N-gram entropy of generated text
