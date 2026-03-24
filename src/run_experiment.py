@@ -8,6 +8,7 @@ Methods tested:
 1. ROME (Rank-One Model Editing) - direct weight editing
 2. Standard fine-tuning on single example
 3. LoRA fine-tuning (low-rank adaptation)
+4. AlphaEdit (null-space constrained rank-one editing)
 
 Evaluation dimensions:
 - Edit efficacy (does 2+2 now give 5?)
@@ -265,6 +266,156 @@ def rome_edit(model, tokenizer, prompt, target_new, layer_idx=17):
 
 
 # ============================================================
+# AlphaEdit (Null-Space Constrained Rank-One Editing)
+# ============================================================
+
+def collect_preserved_keys(model, tokenizer, layer_idx, texts, batch_size=8):
+    """
+    Collect MLP input activations (keys) at layer_idx for preserved-knowledge texts.
+    Returns K0: tensor of shape [n_samples, d_ff] (input to c_proj).
+    """
+    model.eval()
+    keys = []
+    hook_data = {}
+
+    def capture_hook(module, inp, out):
+        # inp[0] shape: [batch, seq_len, d_ff]
+        hook_data["k"] = inp[0].detach().clone()
+
+    h = model.transformer.h[layer_idx].mlp.c_proj.register_forward_hook(capture_hook)
+
+    with torch.no_grad():
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            enc = tokenizer(batch, return_tensors="pt", padding=True, truncation=True,
+                            max_length=64).to(DEVICE)
+            model(**enc)
+            # Take all non-padding token activations
+            attn_mask = enc["attention_mask"]  # [batch, seq_len]
+            k_batch = hook_data["k"]  # [batch, seq_len, d_ff]
+            for b in range(k_batch.shape[0]):
+                valid_len = attn_mask[b].sum().item()
+                keys.append(k_batch[b, :valid_len, :].cpu())  # [valid_len, d_ff]
+
+    h.remove()
+    K0 = torch.cat(keys, dim=0)  # [n_samples, d_ff]
+    print(f"    Collected {K0.shape[0]} preserved keys from layer {layer_idx}")
+    return K0
+
+
+def compute_null_space_projector(K0, threshold=1e-2):
+    """
+    Compute null-space projector P = U_hat @ U_hat^T where U_hat spans the
+    null space of K0 (eigenvectors with eigenvalues <= threshold).
+
+    AlphaEdit: project weight update into null space of preserved keys so that
+    (W + Delta*P) @ K0.T = W @ K0.T (preserved outputs unchanged, linearly).
+    """
+    # Covariance in key space: [d_ff, d_ff]
+    K0 = K0.to(DEVICE).float()
+    cov = K0.T @ K0  # [d_ff, d_ff]
+
+    # SVD / eigendecomposition
+    eigvals, eigvecs = torch.linalg.eigh(cov)  # ascending order
+
+    # Null space: eigenvectors where eigenvalue <= threshold * max_eigval
+    max_eigval = eigvals.max().item()
+    null_mask = eigvals <= threshold * max_eigval
+    U_hat = eigvecs[:, null_mask]  # [d_ff, n_null]
+
+    null_frac = null_mask.sum().item() / len(eigvals)
+    print(f"    Null space: {null_mask.sum().item()}/{len(eigvals)} dims ({null_frac:.1%})")
+
+    P = U_hat @ U_hat.T  # [d_ff, d_ff]
+    return P
+
+
+def alphaedit_edit(model, tokenizer, prompt, target_new, layer_idx=20,
+                   preserved_texts=None):
+    """
+    AlphaEdit: ROME-style rank-one update projected into the null space of
+    preserved-knowledge keys, so preserved outputs are (linearly) unchanged.
+
+    Reference: Fang et al. (ICLR 2025) AlphaEdit.
+    """
+    if preserved_texts is None:
+        preserved_texts = PERPLEXITY_TEXTS + [t["prompt"] for t in RELATED_ARITHMETIC] \
+                          + [t["prompt"] for t in UNRELATED_ARITHMETIC]
+
+    edited = copy.deepcopy(model)
+    edited.eval()
+
+    # Step 1: Collect preserved keys and compute null-space projector
+    K0 = collect_preserved_keys(edited, tokenizer, layer_idx, preserved_texts)
+    P = compute_null_space_projector(K0)  # [d_ff, d_ff]
+
+    mlp_proj = edited.transformer.h[layer_idx].mlp.c_proj
+
+    # Step 2: Capture MLP key (input to c_proj) for the edit prompt
+    hook_data = {}
+    def capture_hook(module, inp, out):
+        hook_data["k"] = inp[0][0, -1, :].detach().clone()
+        hook_data["v_old"] = out[0, -1, :].detach().clone()
+
+    h = mlp_proj.register_forward_hook(capture_hook)
+    inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
+    with torch.no_grad():
+        edited(**inputs)
+    h.remove()
+
+    k = hook_data["k"]   # [d_ff]
+    v_old = hook_data["v_old"]  # [d_model]
+
+    # Step 3: Optimize v_new (same as ROME)
+    target_id = tokenizer.encode(target_new, add_special_tokens=False)[0]
+    v_new = v_old.clone().requires_grad_(True)
+    opt = torch.optim.Adam([v_new], lr=0.5)
+
+    for step in range(150):
+        opt.zero_grad()
+
+        def replace_hook(module, inp, out):
+            new_out = out.clone()
+            new_out[0, -1, :] = v_new
+            return new_out
+
+        h = mlp_proj.register_forward_hook(replace_hook)
+        logits = edited(**inputs).logits[0, -1, :]
+        h.remove()
+
+        log_p = F.log_softmax(logits, dim=-1)
+        loss = -log_p[target_id] + 0.05 * torch.norm(v_new - v_old)
+        loss.backward()
+        opt.step()
+
+        p_target = torch.exp(log_p[target_id]).item()
+        if step % 30 == 0:
+            print(f"    step {step}: P(target)={p_target:.4f}")
+        if p_target > 0.99:
+            break
+
+    # Step 4: Compute rank-one update and PROJECT into null space
+    delta_v = v_new.detach() - v_old
+    k_sq = torch.dot(k, k)
+    # Raw rank-one update (same as ROME): shape [d_ff, d_model]
+    raw_update = torch.outer(k, delta_v) / k_sq
+
+    # Project rows (key dimension) into null space of K0
+    # P is [d_ff, d_ff]; we project each row k_i of the update
+    projected_update = P @ raw_update  # [d_ff, d_model]
+
+    mlp_proj.weight.data += projected_update
+
+    w_norm = torch.norm(mlp_proj.weight.data).item()
+    u_norm_raw = torch.norm(raw_update).item()
+    u_norm_proj = torch.norm(projected_update).item()
+    print(f"    Applied at layer {layer_idx}")
+    print(f"    Raw update norm: {u_norm_raw:.6f}, Projected: {u_norm_proj:.6f} "
+          f"({u_norm_proj/u_norm_raw:.1%} of raw, {u_norm_proj/w_norm:.2e} relative)")
+    return edited
+
+
+# ============================================================
 # Fine-tuning
 # ============================================================
 
@@ -425,6 +576,17 @@ def main():
     del lora_model
     torch.cuda.empty_cache()
 
+    # ---- Phase 5: AlphaEdit ----
+    print("\n" + "="*70 + "\nPHASE 5: ALPHAEDIT (NULL-SPACE CONSTRAINED)\n" + "="*70)
+    try:
+        alpha_model = alphaedit_edit(model, tokenizer, "2+2=", " 5", layer_idx=20)
+        all_results["alphaedit"] = evaluate_model(alpha_model, tokenizer, "AlphaEdit (layer 20)")
+        del alpha_model
+        torch.cuda.empty_cache()
+    except Exception as e:
+        print(f"  AlphaEdit failed: {e}")
+        import traceback; traceback.print_exc()
+
     # ---- Save ----
     def jsonify(obj):
         if isinstance(obj, dict):
@@ -446,7 +608,7 @@ def main():
     print("-" * 63)
 
     summary = []
-    for key, name in [("baseline","Baseline"), ("rome","ROME"), ("finetune","Fine-tune"), ("lora","LoRA")]:
+    for key, name in [("baseline","Baseline"), ("rome","ROME"), ("finetune","Fine-tune"), ("lora","LoRA"), ("alphaedit","AlphaEdit")]:
         if key not in all_results:
             continue
         r = all_results[key]
