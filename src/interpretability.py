@@ -278,13 +278,21 @@ def record_attention_patterns(model, tokenizer, prompts):
     model.eval()
     result = {}
 
+    # Ensure model config returns attentions
+    orig_output_attentions = model.config.output_attentions
+    model.config.output_attentions = True
+
     for prompt in prompts:
         inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
         with torch.no_grad():
             out = model(**inputs, output_attentions=True)
+        if not out.attentions:
+            raise RuntimeError("Model did not return attentions. Check model config.")
         # out.attentions: tuple of [1, n_heads, seq_len, seq_len] per layer
         attn_stack = np.stack([a[0].cpu().numpy() for a in out.attentions])  # [n_layers, n_heads, seq, seq]
         result[prompt] = attn_stack
+
+    model.config.output_attentions = orig_output_attentions
 
     return result
 
@@ -328,69 +336,8 @@ def run_interpretability_analysis(model_baseline, model_rome, tokenizer,
     unrelated_prompts = ["7+8=", "9+6=", "5*5="]
     all_prompts = [target_prompt] + related_prompts + unrelated_prompts
 
-    results = {}
-
-    # ---- 1. Causal Tracing (baseline model) ----
-    print("\n[Causal Tracing] Running on baseline model...")
-    causal_results = {}
-    for prompt in [target_prompt] + related_prompts[:3]:
-        print(f"  Tracing: {prompt!r}")
-        # Trace for P("4") — what maintains correct arithmetic
-        scores_4, tokens, clean_p4, noisy_p4 = causal_trace(
-            model_baseline, tokenizer, prompt, " 4"
-        )
-        # Also trace for P("5") on target prompt
-        if prompt == target_prompt:
-            scores_5, _, clean_p5, noisy_p5 = causal_trace(
-                model_baseline, tokenizer, prompt, " 5"
-            )
-            causal_results[prompt] = {
-                "tokens": tokens,
-                "scores_4": scores_4.tolist(), "clean_p4": clean_p4, "noisy_p4": noisy_p4,
-                "scores_5": scores_5.tolist(), "clean_p5": clean_p5, "noisy_p5": noisy_p5,
-            }
-        else:
-            causal_results[prompt] = {
-                "tokens": tokens,
-                "scores_4": scores_4.tolist(), "clean_p4": clean_p4, "noisy_p4": noisy_p4,
-            }
-    results["causal_tracing"] = causal_results
-
-    # ---- 2. Activation Diffs ----
-    print("\n[Activation Diffs] Recording pre/post edit activations...")
-    acts_before = record_residual_stream(model_baseline, tokenizer, all_prompts)
-    acts_after_rome = record_residual_stream(model_rome, tokenizer, all_prompts)
-    diffs_rome = compute_activation_diffs(acts_before, acts_after_rome, all_prompts)
-    results["activation_diffs_rome"] = diffs_rome
-
-    if model_alphaedit is not None:
-        acts_after_alpha = record_residual_stream(model_alphaedit, tokenizer, all_prompts)
-        diffs_alpha = compute_activation_diffs(acts_before, acts_after_alpha, all_prompts)
-        results["activation_diffs_alphaedit"] = diffs_alpha
-        print("  AlphaEdit activation diffs computed.")
-
-    # ---- 3. Logit Lens ----
-    print("\n[Logit Lens] Analyzing layer-by-layer token probabilities...")
-    logit_lens_results = {}
-    for model_label, mdl in [("baseline", model_baseline), ("rome", model_rome)]:
-        logit_lens_results[model_label] = {}
-        for prompt in [target_prompt] + related_prompts[:3]:
-            probs, tok_labels = logit_lens(mdl, tokenizer, prompt)
-            logit_lens_results[model_label][prompt] = {
-                "probs": probs.tolist(),
-                "token_labels": tok_labels,
-            }
-    results["logit_lens"] = logit_lens_results
-
-    # ---- 4. Attention Diffs ----
-    print("\n[Attention] Recording attention patterns...")
-    attn_before = record_attention_patterns(model_baseline, tokenizer, all_prompts)
-    attn_after_rome = record_attention_patterns(model_rome, tokenizer, all_prompts)
-    attn_diffs = compute_attention_diffs(attn_before, attn_after_rome, all_prompts)
-    results["attention_diffs_rome"] = attn_diffs
-
-    # ---- Save ----
     out_path = output_dir / "interp_results.json"
+
     def to_serializable(obj):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
@@ -404,8 +351,90 @@ def run_interpretability_analysis(model_baseline, model_rome, tokenizer,
             return int(obj)
         return obj
 
-    with open(out_path, "w") as f:
-        json.dump(to_serializable(results), f, indent=2)
+    def save_checkpoint(results):
+        with open(out_path, "w") as f:
+            json.dump(to_serializable(results), f, indent=2)
+
+    # Load existing partial results if present
+    if out_path.exists():
+        with open(out_path) as f:
+            results = json.load(f)
+        print(f"  Loaded partial results from {out_path}")
+    else:
+        results = {}
+
+    # ---- 1. Causal Tracing (baseline model) ----
+    if "causal_tracing" not in results:
+        print("\n[Causal Tracing] Running on baseline model...")
+        causal_results = {}
+        for prompt in [target_prompt] + related_prompts[:3]:
+            print(f"  Tracing: {prompt!r}")
+            scores_4, tokens, clean_p4, noisy_p4 = causal_trace(
+                model_baseline, tokenizer, prompt, " 4"
+            )
+            if prompt == target_prompt:
+                scores_5, _, clean_p5, noisy_p5 = causal_trace(
+                    model_baseline, tokenizer, prompt, " 5"
+                )
+                causal_results[prompt] = {
+                    "tokens": tokens,
+                    "scores_4": scores_4.tolist(), "clean_p4": clean_p4, "noisy_p4": noisy_p4,
+                    "scores_5": scores_5.tolist(), "clean_p5": clean_p5, "noisy_p5": noisy_p5,
+                }
+            else:
+                causal_results[prompt] = {
+                    "tokens": tokens,
+                    "scores_4": scores_4.tolist(), "clean_p4": clean_p4, "noisy_p4": noisy_p4,
+                }
+        results["causal_tracing"] = causal_results
+        save_checkpoint(results)
+    else:
+        print("\n[Causal Tracing] Skipping — already in results.")
+
+    # ---- 2. Activation Diffs ----
+    needs_act = "activation_diffs_rome" not in results or \
+                (model_alphaedit is not None and "activation_diffs_alphaedit" not in results)
+    if needs_act:
+        print("\n[Activation Diffs] Recording pre/post edit activations...")
+        acts_before = record_residual_stream(model_baseline, tokenizer, all_prompts)
+        if "activation_diffs_rome" not in results:
+            acts_after_rome = record_residual_stream(model_rome, tokenizer, all_prompts)
+            results["activation_diffs_rome"] = compute_activation_diffs(acts_before, acts_after_rome, all_prompts)
+        if model_alphaedit is not None and "activation_diffs_alphaedit" not in results:
+            acts_after_alpha = record_residual_stream(model_alphaedit, tokenizer, all_prompts)
+            results["activation_diffs_alphaedit"] = compute_activation_diffs(acts_before, acts_after_alpha, all_prompts)
+            print("  AlphaEdit activation diffs computed.")
+        save_checkpoint(results)
+    else:
+        print("\n[Activation Diffs] Skipping — already in results.")
+
+    # ---- 3. Logit Lens ----
+    if "logit_lens" not in results:
+        print("\n[Logit Lens] Analyzing layer-by-layer token probabilities...")
+        logit_lens_results = {}
+        for model_label, mdl in [("baseline", model_baseline), ("rome", model_rome)]:
+            logit_lens_results[model_label] = {}
+            for prompt in [target_prompt] + related_prompts[:3]:
+                probs, tok_labels = logit_lens(mdl, tokenizer, prompt)
+                logit_lens_results[model_label][prompt] = {
+                    "probs": probs.tolist(),
+                    "token_labels": tok_labels,
+                }
+        results["logit_lens"] = logit_lens_results
+        save_checkpoint(results)
+    else:
+        print("\n[Logit Lens] Skipping — already in results.")
+
+    # ---- 4. Attention Diffs ----
+    if "attention_diffs_rome" not in results:
+        print("\n[Attention] Recording attention patterns...")
+        attn_before = record_attention_patterns(model_baseline, tokenizer, all_prompts)
+        attn_after_rome = record_attention_patterns(model_rome, tokenizer, all_prompts)
+        results["attention_diffs_rome"] = compute_attention_diffs(attn_before, attn_after_rome, all_prompts)
+        save_checkpoint(results)
+    else:
+        print("\n[Attention] Skipping — already in results.")
+
     print(f"\nInterpretability results saved to {out_path}")
     return results
 

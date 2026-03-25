@@ -40,7 +40,7 @@ torch.cuda.manual_seed_all(SEED)
 
 DEVICE = torch.device("cuda:0")
 MODEL_NAME = "gpt2-xl"
-RESULTS_DIR = Path("/workspaces/isolate-knowledge-updates-claude/results")
+RESULTS_DIR = Path(__file__).parent.parent / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
 
 # ============================================================
