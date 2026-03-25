@@ -278,21 +278,15 @@ def record_attention_patterns(model, tokenizer, prompts):
     model.eval()
     result = {}
 
-    # Ensure model config returns attentions
-    orig_output_attentions = model.config.output_attentions
-    model.config.output_attentions = True
-
     for prompt in prompts:
         inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
         with torch.no_grad():
             out = model(**inputs, output_attentions=True)
         if not out.attentions:
-            raise RuntimeError("Model did not return attentions. Check model config.")
+            raise RuntimeError("Model did not return attentions. Ensure model is loaded with attn_implementation='eager'.")
         # out.attentions: tuple of [1, n_heads, seq_len, seq_len] per layer
         attn_stack = np.stack([a[0].cpu().numpy() for a in out.attentions])  # [n_layers, n_heads, seq, seq]
         result[prompt] = attn_stack
-
-    model.config.output_attentions = orig_output_attentions
 
     return result
 
@@ -448,7 +442,9 @@ if __name__ == "__main__":
     print(f"Loading {MODEL_NAME}...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float32).to(DEVICE)
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME, torch_dtype=torch.float32, attn_implementation="eager"
+    ).to(DEVICE)
     model.eval()
 
     print("Applying ROME edit...")
